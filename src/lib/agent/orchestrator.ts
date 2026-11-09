@@ -24,7 +24,13 @@ const AGENT_INSTRUCTIONS = `あなたはAIエージェントです。
 必要に応じて利用可能なToolを実行してください。
 取得した情報の出典を保持してください。
 不明なことは断定せず、不足を明示してください。
-最終回答は日本語で、要点が分かるように書いてください。`;
+最終回答は日本語で、要点が分かるように書いてください。
+
+Toolの使い分け:
+- searchKnowledge: 社内ナレッジ専用。無い場合は無理に使わない。
+- answerQuestion: 一般的な事実質問。検索は Gemini に任せる。
+- calculate: 計算が必要なとき。
+- saveMemo: ユーザーが保存を依頼したときだけ。`;
 
 type Emit = (event: AgentEvent) => void;
 
@@ -49,6 +55,9 @@ function demoPlan(message: string) {
   if (/調べ|比較|人口|React|Next|RAG|違い/.test(message)) {
     calls.push({ name: "searchKnowledge", args: { query: message } });
   }
+  if (/何種類|いつ|誰|どこ|とは|教えて|ポケモン|pokemon/i.test(message)) {
+    calls.push({ name: "answerQuestion", args: { question: message } });
+  }
   if (/計算|合計|平均|差分|比率|%/.test(message) || /人口/.test(message)) {
     if (/東京/.test(message) && /大阪/.test(message)) {
       calls.push({
@@ -67,7 +76,7 @@ function demoPlan(message: string) {
     });
   }
   if (calls.length === 0) {
-    calls.push({ name: "searchKnowledge", args: { query: message } });
+    calls.push({ name: "answerQuestion", args: { question: message } });
   }
   return calls;
 }
@@ -78,6 +87,30 @@ function demoAnswer(message: string, toolResults: JsonValue[]) {
     "",
   ];
   for (const result of toolResults) {
+    if (result && typeof result === "object" && "answers" in result) {
+        const answers = (
+        result as {
+          answers: {
+            title: string;
+            content: string;
+            source: string;
+            url?: string;
+            urls?: string[];
+          }[];
+        }
+      ).answers;
+      if (answers.length === 0) {
+        lines.push("公開情報: 該当なし");
+      } else {
+        for (const answer of answers) {
+          lines.push(`【${answer.title}】(${answer.source})`);
+          lines.push(answer.content);
+          if (answer.url) lines.push(answer.url);
+          if (answer.urls?.length) lines.push(answer.urls.join("\n"));
+          lines.push("");
+        }
+      }
+    }
     if (result && typeof result === "object" && "results" in result) {
       const docs = (result as { results: { title: string; content: string; source: string }[] })
         .results;

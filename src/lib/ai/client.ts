@@ -3,6 +3,7 @@ import {
   type Content,
   type FunctionDeclaration,
   type GenerativeModel,
+  type Tool,
 } from "@google/generative-ai";
 
 let client: GoogleGenerativeAI | null = null;
@@ -77,15 +78,21 @@ export function getGeminiModel(
   options?: {
     systemInstruction?: string;
     tools?: FunctionDeclaration[];
+    extraTools?: Tool[];
     json?: boolean;
   },
 ): GenerativeModel {
+  const tools: Tool[] = [];
+  if (options?.tools?.length) {
+    tools.push({ functionDeclarations: options.tools });
+  }
+  if (options?.extraTools?.length) {
+    tools.push(...options.extraTools);
+  }
   return getGemini().getGenerativeModel({
     model: modelName,
     systemInstruction: options?.systemInstruction,
-    tools: options?.tools?.length
-      ? [{ functionDeclarations: options.tools }]
-      : undefined,
+    tools: tools.length ? tools : undefined,
     generationConfig: options?.json
       ? { temperature: 0, responseMimeType: "application/json" }
       : { temperature: 0.3 },
@@ -119,6 +126,61 @@ export async function generateText(prompt: string, systemInstruction?: string) {
     const model = getGeminiModel(modelName, { systemInstruction });
     const result = await model.generateContent(prompt);
     return result.response.text();
+  });
+}
+
+export async function generateSearchAnswer(question: string) {
+  const systemInstruction =
+    "あなたは事実質問に答える調査アシスタントです。必要なら検索して、日本語で簡潔に答えてください。不確かな点は断定しないでください。出典があれば本文に含めてください。";
+  const prompt = `質問:\n${question}`;
+  const searchTools: Tool[][] = [
+    [{ googleSearch: {} } as Tool],
+    [{ googleSearchRetrieval: {} }],
+  ];
+
+  return withModelFallback(async (modelName) => {
+    let lastError: unknown;
+    for (const extraTools of searchTools) {
+      try {
+        const model = getGeminiModel(modelName, {
+          systemInstruction,
+          extraTools,
+        });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim();
+        const chunks = result.response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+        const sources = chunks
+          .map((chunk) => ({
+            title: chunk.web?.title ?? "検索結果",
+            url: chunk.web?.uri ?? "",
+          }))
+          .filter((item) => item.url);
+        if (text) {
+          return { text, sources, searched: true as const };
+        }
+      } catch (error) {
+        lastError = error;
+        const message = errorMessage(error);
+        if (isQuotaError(error) || isUnavailableError(error)) {
+          throw error;
+        }
+        if (
+          !message.includes("400") &&
+          !message.includes("INVALID_ARGUMENT") &&
+          !message.includes("not supported")
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    const model = getGeminiModel(modelName, { systemInstruction });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
+    if (!text && lastError) {
+      throw lastError;
+    }
+    return { text, sources: [], searched: false as const };
   });
 }
 

@@ -1,4 +1,5 @@
 import { SchemaType, type FunctionDeclaration } from "@google/generative-ai";
+import { answerQuestion } from "./answerQuestion";
 import { calculate } from "./calculator";
 import { saveMemoTool } from "./memo";
 import { searchKnowledge } from "./search";
@@ -8,7 +9,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "searchKnowledge",
     description:
-      "社内ナレッジやサンプル統計から関連情報を検索する。事実確認や比較の前に使う。",
+      "社内ナレッジやサンプル統計だけを検索する。一般的な雑学・時事・百科事典的な質問には使わない。",
     parameters: {
       type: "object",
       properties: {
@@ -18,6 +19,21 @@ export const toolDefinitions: ToolDefinition[] = [
         },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "answerQuestion",
+    description:
+      "単純な事実質問に答える。検索は Gemini に任せる。「何種類」「いつ」「誰」などの一般質問で使う。",
+    parameters: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description: "ユーザーの質問をそのまま渡す。例: ポケモンは何種類いる？",
+        },
+      },
+      required: ["question"],
     },
   },
   {
@@ -50,6 +66,7 @@ export const toolDefinitions: ToolDefinition[] = [
 
 const handlers: Record<ToolName, ToolHandler> = {
   searchKnowledge,
+  answerQuestion,
   calculate,
   saveMemo: saveMemoTool,
 };

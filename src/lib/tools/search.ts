@@ -35,7 +35,7 @@ const KNOWLEDGE_BASE: KnowledgeDoc[] = [
     title: "AIエージェントの実行方針",
     source: "Agent Studio Knowledge",
     content:
-      "ユーザー指示をBackendのOrchestratorが受け取り、AIがToolを選択し、Backendが許可されたToolだけを実行する。結果はVerifier AIが検証してから返す。ToolはsearchKnowledge、calculate、saveMemoを利用できる。",
+      "ユーザー指示をBackendのOrchestratorが受け取り、AIがToolを選択し、Backendが許可されたToolだけを実行する。結果はVerifier AIが検証してから返す。ToolはsearchKnowledge、answerQuestion、calculate、saveMemoを利用できる。",
   },
 ];
 
@@ -74,7 +74,8 @@ export async function searchKnowledge(
   if (ranked.length === 0) {
     return {
       results: [],
-      message: "ナレッジベースに一致する文書はありませんでした。断定せず、不足を伝えてください。",
+      message:
+        "ナレッジベースに一致する文書はありませんでした。一般質問なら answerQuestion を使ってください。",
     };
   }
 

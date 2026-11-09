@@ -1,4 +1,4 @@
-export type ToolName = "searchKnowledge" | "calculate" | "saveMemo";
+export type ToolName = "searchKnowledge" | "answerQuestion" | "calculate" | "saveMemo";
 
 export type ToolStatus = "pending" | "running" | "success" | "error";
 
