@@ -1,3 +1,7 @@
+/**
+ * 入力欄。Enter 単体では送らない（日本語 IME 確定と衝突するため）。
+ * Ctrl / Cmd + Enter で送信。変換中（isComposing / keyCode 229）は無視する。
+ */
 import type { KeyboardEvent } from "react";
 
 type Props = {
@@ -7,10 +11,12 @@ type Props = {
   onSubmit: () => void;
 };
 
+/** IME 変換中の Enter か。変換確定と送信が重ならないようにする。 */
 function isComposingEvent(event: KeyboardEvent<HTMLTextAreaElement>) {
   return event.nativeEvent.isComposing || event.keyCode === 229;
 }
 
+/** 下部の入力。送信はボタンまたは Ctrl/Cmd+Enter。 */
 export function ChatInput({ value, disabled, onChange, onSubmit }: Props) {
   return (
     <form

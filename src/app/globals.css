@@ -1,3 +1,4 @@
+/* 全体の見た目。Tailwind v4。チャット内 Markdown の見出し・リスト・表もここで整える。 */
 @import "tailwindcss";
 
 :root {

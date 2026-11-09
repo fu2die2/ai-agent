@@ -1,3 +1,7 @@
+/**
+ * 全ページ共通レイアウト。
+ * 明るい背景と日本語 lang。フォントは Geist（本文）と Geist Mono（コード向け変数）。
+ */
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -17,6 +21,7 @@ export const metadata: Metadata = {
   description: "Tool Calling と Verifier を備えた AI エージェント",
 };
 
+/** html/body とフォント変数を付ける。 */
 export default function RootLayout({
   children,
 }: Readonly<{

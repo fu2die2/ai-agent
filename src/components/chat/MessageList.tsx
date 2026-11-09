@@ -1,3 +1,4 @@
+/** 会話ログ。空のときは社内ナレッジ向けの例文を出す。本文は Markdown として描画する。 */
 import { MarkdownBody } from "@/components/chat/MarkdownBody";
 import type { ChatMessage } from "@/types/agent";
 
@@ -6,6 +7,7 @@ type Props = {
   streaming?: boolean;
 };
 
+/** ユーザー右寄せ・エージェント左寄せで吹き出しを並べる。 */
 export function MessageList({ messages, streaming }: Props) {
   if (messages.length === 0) {
     return (

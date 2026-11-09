@@ -1,3 +1,4 @@
+/** 右ペイン。計画 → Tool → 検証の進行と、回数・所要時間・Verifier コメントを表示する。 */
 import { ToolExecution } from "./ToolExecution";
 import type { AgentRunSummary, TraceStep, VerificationResult } from "@/types/agent";
 
@@ -8,6 +9,7 @@ type Props = {
   running?: boolean;
 };
 
+/** 右側の進行ログと、下部の Tool 回数・所要時間・検証コメント。 */
 export function ExecutionTrace({ steps, summary, verification, running }: Props) {
   return (
     <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-slate-200 bg-white">

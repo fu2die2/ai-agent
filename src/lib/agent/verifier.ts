@@ -1,3 +1,7 @@
+/**
+ * 最終回答の検証。
+ * Gemini が JSON で合否を返し、キーが無い・失敗したときは簡易ルールで代用する。
+ */
 import { generateJson, hasGeminiKey } from "@/lib/ai/client";
 import type { VerificationResult } from "@/types/agent";
 import type { JsonValue } from "@/types/tool";
@@ -13,6 +17,7 @@ const SYSTEM = `あなたはAIエージェントの出力を検証する関数�
 出力形式:
 {"status":"passed"|"failed","issues":["..."],"summary":"..."}`;
 
+/** API なしでも「空回答」「保存忘れ」「調査なのに Tool ゼロ」は落とす。 */
 function heuristicVerify(params: {
   userRequest: string;
   toolResults: JsonValue[];
@@ -41,6 +46,7 @@ function heuristicVerify(params: {
   };
 }
 
+/** 最終回答を検証する。Gemini 優先、失敗時は heuristicVerify。 */
 export async function verifyResult(params: {
   userRequest: string;
   toolResults: JsonValue[];

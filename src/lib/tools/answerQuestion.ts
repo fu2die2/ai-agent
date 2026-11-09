@@ -1,6 +1,11 @@
+/**
+ * answerQuestion Tool。
+ * 社内文書ではない一般質問向け。検索は Gemini の Google Search grounding に任せる。
+ */
 import { generateSearchAnswer, hasGeminiKey } from "@/lib/ai/client";
 import type { JsonValue } from "@/types/tool";
 
+/** 一般質問を Gemini（可能なら Google 検索付き）に渡す。 */
 export async function answerQuestion(
   args: Record<string, JsonValue>,
 ): Promise<JsonValue> {

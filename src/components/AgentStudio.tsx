@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * 画面の本体。左: 履歴 / 中央: チャット / 右: Execution Trace。
+ * 送信すると /api/agent/stream の SSE を読み、イベントごとに Trace とメッセージを更新する。
+ */
+
 import { useCallback, useEffect, useState } from "react";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { MessageList } from "@/components/chat/MessageList";
@@ -13,10 +18,12 @@ import type {
   VerificationResult,
 } from "@/types/agent";
 
+/** 新規会話の sessionId。サーバー側は初めて保存するまでファイルに無い。 */
 function createId() {
   return `session_${Date.now()}`;
 }
 
+/** 途中までしか届いていない SSE は rest に残し、次のチャンクとつなぐ。 */
 function parseSseChunk(buffer: string) {
   const events: { event: string; data: string }[] = [];
   const parts = buffer.split("\n\n");
@@ -33,6 +40,7 @@ function parseSseChunk(buffer: string) {
   return { events, rest };
 }
 
+/** 3ペインのチャット画面。SSE の購読とセッション読み込みを持つ。 */
 export function AgentStudio() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -43,6 +51,7 @@ export function AgentStudio() {
   const [summary, setSummary] = useState<AgentRunSummary | null>(null);
   const [verification, setVerification] = useState<VerificationResult | null>(null);
 
+  /** 左の履歴を /api/sessions から取り直す。 */
   const refreshSessions = useCallback(async () => {
     const response = await fetch("/api/sessions");
     const json = (await response.json()) as { sessions: SessionSummary[] };
@@ -54,6 +63,7 @@ export function AgentStudio() {
     void refreshSessions();
   }, [refreshSessions]);
 
+  /** 履歴の1件を開き、メッセージと Trace を復元する。 */
   const loadSession = async (id: string) => {
     const response = await fetch(`/api/sessions/${id}`);
     if (!response.ok) return;
@@ -70,6 +80,7 @@ export function AgentStudio() {
     setVerification(json.session.verification ?? null);
   };
 
+  /** 画面上の会話だけ空にする。保存済み履歴は消さない。 */
   const startNew = () => {
     setSessionId(null);
     setMessages([]);
@@ -78,6 +89,7 @@ export function AgentStudio() {
     setVerification(null);
   };
 
+  /** 入力を SSE に流し、event 名ごとに Trace / メッセージを更新する。 */
   const send = async () => {
     const text = input.trim();
     if (!text || running) return;

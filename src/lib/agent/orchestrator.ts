@@ -1,3 +1,13 @@
+/**
+ * エージェントの中核。
+ *
+ * 流れ:
+ * 1. ユーザー発言をセッションに積む
+ * 2. Gemini が Tool を選ぶ（キーが無いときは正規表現のデモプラン）
+ * 3. 許可された Tool だけ実行し、結果をモデルに戻す（最大 MAX_TOOL_ROUNDS 回）
+ * 4. Verifier が回答を点検し、不合格なら一度だけ書き直す
+ * 5. SSE で画面の Execution Trace を更新する
+ */
 import type { Content, FunctionCall } from "@google/generative-ai";
 import {
   generateAgentTurn,
@@ -34,15 +44,18 @@ Toolの使い分け:
 
 type Emit = (event: AgentEvent) => void;
 
+/** Trace / メッセージ / Tool 実行の ID を作る。 */
 function id(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** サイドバー用の短い会話タイトル。先頭24文字。 */
 function titleFromMessage(message: string) {
   const trimmed = message.replace(/\s+/g, " ").trim();
   return trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed || "新しい会話";
 }
 
+/** Gemini の functionCall.args を自前の JSON オブジェクトに揃える。 */
 function asArgs(value: unknown): Record<string, JsonValue> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, JsonValue>;
@@ -50,6 +63,7 @@ function asArgs(value: unknown): Record<string, JsonValue> {
   return {};
 }
 
+/** GEMINI_API_KEY が無いときに、キーワードだけで Tool を選ぶ。 */
 function demoPlan(message: string) {
   const calls: { name: string; args: Record<string, JsonValue> }[] = [];
   if (
@@ -85,6 +99,7 @@ function demoPlan(message: string) {
   return calls;
 }
 
+/** デモモードの最終文面。Tool の JSON を人が読める文章に並べる。 */
 function demoAnswer(message: string, toolResults: JsonValue[]) {
   const lines = [
     "デモモードで処理しました。`.env.local` に GEMINI_API_KEY を入れると、Gemini が Tool を自律選択します。",
@@ -148,6 +163,7 @@ function demoAnswer(message: string, toolResults: JsonValue[]) {
   return lines.join("\n");
 }
 
+/** 既存セッションを読む。無ければ空の会話を作る（まだファイルには書かない）。 */
 async function ensureSession(sessionId: string, message: string): Promise<SessionRecord> {
   const existing = await getSession(sessionId);
   if (existing) return existing;
@@ -161,6 +177,7 @@ async function ensureSession(sessionId: string, message: string): Promise<Sessio
   };
 }
 
+/** 1つの Tool を実行し、Trace と SSE を同時に更新する。 */
 async function runOneTool(options: {
   toolId: string;
   name: string;
@@ -217,6 +234,7 @@ async function runOneTool(options: {
   }
 }
 
+/** 画面の role=assistant は Gemini では role=model。 */
 function toGeminiHistory(messages: ChatMessage[]): Content[] {
   return messages.map((item) => ({
     role: item.role === "assistant" ? "model" : "user",
@@ -224,6 +242,7 @@ function toGeminiHistory(messages: ChatMessage[]): Content[] {
   }));
 }
 
+/** 1回のユーザー発言を最後まで処理する入口。emit で SSE に途中経過を流す。 */
 export async function runAgent(options: {
   sessionId: string;
   message: string;
@@ -265,6 +284,7 @@ export async function runAgent(options: {
   try {
     let answer = "";
 
+    // キー無しはデモ。あっても Gemini が functionCall を出すまでループする
     if (!hasGeminiKey()) {
       const calls = demoPlan(options.message);
       traces[0].status = "completed";
@@ -310,6 +330,7 @@ export async function runAgent(options: {
           });
         }
 
+        // Tool 要求がある間は、モデルの functionCall を会話に残し、結果を user 役で返す
         if (turn.functionCalls.length > 0) {
           contents.push(
             turn.modelContent ?? {
@@ -373,6 +394,7 @@ export async function runAgent(options: {
       finalAnswer: answer,
     });
 
+    // 不合格なら指摘を渡してもう一度生成し、再検証する（クォータ不足なら現状のまま返す）
     if (verification.status === "failed" && hasGeminiKey()) {
       try {
         answer = await generateText(

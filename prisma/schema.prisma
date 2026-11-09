@@ -1,3 +1,6 @@
+// PostgreSQL 上のテーブル定義。
+// メモと、Notion から作ったナレッジチャンク（本文 + 埋め込み JSON）を持つ。
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,6 +10,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// エージェントが「メモに保存して」で書く行。saveMemo Tool と /api/memos が使う。
 model Memo {
   id        String   @id @default(cuid())
   title     String
@@ -16,6 +20,8 @@ model Memo {
   @@map("memos")
 }
 
+// RAG の検索単位。1 Notion ページが複数行になることもある。
+// embedding は float 配列の JSON（この環境に pgvector が無いため）。
 model KnowledgeChunk {
   id         String   @id
   documentId String
@@ -27,6 +33,7 @@ model KnowledgeChunk {
   keywords   String   @default("")
   embedding  Json
   model      String
+  // Notion の last_edited_time から作ったハッシュ。同じなら再埋め込みしない
   corpusHash String
   createdAt  DateTime @default(now())
 

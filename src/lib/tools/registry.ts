@@ -1,3 +1,9 @@
+/**
+ * 許可された Tool の一覧と実行入口。
+ *
+ * Gemini にはここの description だけが見える。
+ * 実行は handlers に載っている名前だけ。モデルが知らない名前を呼んでも拒否する。
+ */
 import { SchemaType, type FunctionDeclaration } from "@google/generative-ai";
 import { answerQuestion } from "./answerQuestion";
 import { calculate } from "./calculator";
@@ -71,10 +77,12 @@ const handlers: Record<ToolName, ToolHandler> = {
   saveMemo: saveMemoTool,
 };
 
+/** 定義一覧。/api/tools がこれをそのまま返す。 */
 export function listTools() {
   return toolDefinitions;
 }
 
+/** 名前が許可リストにあれば handler を実行する。それ以外はエラー。 */
 export async function executeTool(
   name: string,
   args: Record<string, JsonValue>,
@@ -86,6 +94,7 @@ export async function executeTool(
   return handler(args);
 }
 
+/** 自前の ToolDefinition を Gemini SDK の FunctionDeclaration に変換する。 */
 export function toGeminiTools(): FunctionDeclaration[] {
   return toolDefinitions.map((tool) => ({
     name: tool.name,

@@ -1,3 +1,4 @@
+/** Execution Trace の1行。status で色を変える（実行中=琥珀、合格=緑、失敗=赤）。 */
 import type { TraceStep } from "@/types/agent";
 
 const statusLabel: Record<TraceStep["status"], string> = {
@@ -7,6 +8,7 @@ const statusLabel: Record<TraceStep["status"], string> = {
   failed: "失敗",
 };
 
+/** Trace の1ステップをカード表示する。 */
 export function ToolExecution({ step }: { step: TraceStep }) {
   const tone =
     step.status === "failed"

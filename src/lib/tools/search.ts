@@ -1,6 +1,15 @@
+/**
+ * searchKnowledge Tool。
+ *
+ * 社内ナレッジ専用。流れは:
+ * 1. Notion から文書を取得してチャンク（未インデックスならここで実施）
+ * 2. 質問を埋め込んで近いチャンクを返す
+ * 3. エージェントはその抜粋だけを根拠に答える
+ */
 import { retrieveKnowledge } from "@/lib/knowledge/retrieve";
 import type { JsonValue } from "@/types/tool";
 
+/** 社内ナレッジを検索し、上位チャンクを results に入れて返す。 */
 export async function searchKnowledge(
   args: Record<string, JsonValue>,
 ): Promise<JsonValue> {
@@ -31,6 +40,7 @@ export async function searchKnowledge(
       })),
     };
   } catch (error) {
+    // 例外を throw せず JSON で返す。Trace は Success でも message で原因が残る
     const message = error instanceof Error ? error.message : "Notionからの取得に失敗しました";
     return {
       results: [],

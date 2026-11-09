@@ -1,6 +1,12 @@
+/**
+ * エージェントを一括実行する API。
+ * ストリーミングせず、完了イベントだけ JSON で返す（curl や検証用）。
+ * 画面のチャットは /api/agent/stream を使う。
+ */
 import { runAgent } from "@/lib/agent/orchestrator";
 import type { AgentEvent } from "@/types/agent";
 
+/** message を受け取り、完了結果だけ JSON で返す。 */
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     sessionId?: string;

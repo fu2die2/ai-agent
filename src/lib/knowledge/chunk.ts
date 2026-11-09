@@ -1,11 +1,20 @@
+/**
+ * 長いページを検索しやすい長さに分割する。
+ *
+ * 1チャンクが長すぎると埋め込みの焦点がぼやけ、
+ * 短すぎると「本社の住所」のような一文が文脈から切れる。
+ * 空行（段落）を優先し、はみ出すときだけ文字数で切る。
+ */
 import type { KnowledgeChunkInput } from "./chunk-types";
 import type { KnowledgeDoc } from "./types";
 
 export type { KnowledgeChunkInput } from "./chunk-types";
 
 const MAX_CHARS = 700;
+/** 切れ目で文脈が消えないよう、前のチャンク末尾を少し重ねる */
 const OVERLAP = 80;
 
+/** 1ページを段落優先で切り、長すぎる段落だけ文字数で分割する。 */
 function splitDoc(doc: KnowledgeDoc) {
   const blocks = doc.content
     .split(/\n\s*\n/)
@@ -14,6 +23,7 @@ function splitDoc(doc: KnowledgeDoc) {
   const pieces: string[] = [];
   let buffer = "";
 
+  /** バッファに溜めた段落を1チャンクとして確定する。 */
   const flush = () => {
     if (buffer.trim()) pieces.push(buffer.trim());
     buffer = "";
@@ -42,6 +52,7 @@ function splitDoc(doc: KnowledgeDoc) {
   return pieces.length ? pieces : [doc.content.trim()].filter(Boolean);
 }
 
+/** 全ページをチャンク配列にする。id は「ページID:番号」。 */
 export function chunkDocuments(docs: KnowledgeDoc[]): KnowledgeChunkInput[] {
   return docs.flatMap((doc) =>
     splitDoc(doc).map((content, chunkIndex) => ({
@@ -57,6 +68,7 @@ export function chunkDocuments(docs: KnowledgeDoc[]): KnowledgeChunkInput[] {
   );
 }
 
+/** 埋め込み用テキスト。タイトルと分類も入れて「会社概要」と本文を結びつけやすくする。 */
 export function embedTextForChunk(chunk: KnowledgeChunkInput) {
   return [
     `タイトル: ${chunk.title}`,

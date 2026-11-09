@@ -1,3 +1,12 @@
+/**
+ * 社内ナレッジの検索本体（RAG）。
+ *
+ * 1. インデックスが古ければ Notion から作り直す
+ * 2. 質問をベクトル化
+ * 3. 各チャンクとのコサイン類似度 + 日本語の語句スコアを混ぜて上位を返す
+ *
+ * 埋め込みが使えないときは語句検索だけに落とす。
+ */
 import { hasGeminiKey } from "../ai/client";
 import { prisma } from "../prisma";
 import type { KnowledgeChunkInput } from "./chunk-types";
@@ -15,6 +24,7 @@ export type RetrievedChunk = {
   lexical: number;
 };
 
+/** 英数字トークンと、日本語は2文字以上の連続を検索語にする。 */
 function tokenize(query: string) {
   return (
     query
@@ -24,6 +34,7 @@ function tokenize(query: string) {
   );
 }
 
+/** キーワード・タイトル一致を厚く加点する。ベクトルが弱い固有名詞向け。 */
 function lexicalScore(
   query: string,
   chunk: Pick<KnowledgeChunkInput, "title" | "category" | "content" | "keywords">,
@@ -46,11 +57,13 @@ function lexicalScore(
   return score;
 }
 
+/** 配列を最大値で割って 0〜1 にする。類似度と語句スコアを同じ土俵に乗せる。 */
 function normalize(values: number[]) {
   const max = Math.max(...values, 1);
   return values.map((value) => value / max);
 }
 
+/** DB に保存したカンマ区切り keywords を配列に戻す。 */
 function keywordsFrom(value: string) {
   return value
     .split(/[,、]/)
@@ -58,6 +71,7 @@ function keywordsFrom(value: string) {
     .filter(Boolean);
 }
 
+/** 埋め込みが使えないときの順位付け。語句スコアだけの上位 limit 件。 */
 function rankLexical(
   query: string,
   rows: { id: string; title: string; category: string; source: string; content: string; keywords: string; documentId: string }[],
@@ -87,6 +101,7 @@ function rankLexical(
     .slice(0, limit);
 }
 
+/** 質問に近いチャンクを最大 limit 件返す。searchKnowledge から呼ばれる。 */
 export async function retrieveKnowledge(query: string, limit = 4) {
   await ensureKnowledgeIndex();
   const rows = await prisma.knowledgeChunk.findMany();
@@ -128,8 +143,10 @@ export async function retrieveKnowledge(query: string, limit = 4) {
           score: 0,
         };
       })
+      // どちらも低すぎるチャンクはノイズなので落とす
       .filter((row) => row.cosine > 0.18 || row.lexical > 0);
 
+    // 尺度が違うので 0〜1 に正規化してから加重平均する
     const cosineNorm = normalize(scored.map((row) => Math.max(row.cosine, 0)));
     const lexicalNorm = normalize(scored.map((row) => row.lexical));
     const ranked = scored

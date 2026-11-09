@@ -1,3 +1,4 @@
+/** 左の会話履歴。New Agent は画面上のメッセージを空にする（サーバー側セッションは残る）。 */
 import type { SessionSummary } from "@/types/agent";
 
 type Props = {
@@ -7,6 +8,7 @@ type Props = {
   onNew: () => void;
 };
 
+/** 左カラム。新規会話ボタンと保存済みセッション一覧。 */
 export function Sidebar({ sessions, currentId, onSelect, onNew }: Props) {
   return (
     <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white">
