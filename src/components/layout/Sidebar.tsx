@@ -9,15 +9,15 @@ type Props = {
 
 export function Sidebar({ sessions, currentId, onSelect, onNew }: Props) {
   return (
-    <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-white/8 bg-[#101218]">
+    <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white">
       <div className="flex items-center justify-between px-4 py-4">
         <div>
-          <p className="text-[11px] tracking-[0.22em] text-zinc-500 uppercase">
+          <p className="text-[11px] tracking-[0.22em] text-slate-400 uppercase">
             Agent Studio
           </p>
-          <p className="mt-1 font-medium text-zinc-100">AI Ajent</p>
+          <p className="mt-1 font-medium text-slate-900">AI Ajent</p>
         </div>
-        <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] text-emerald-300">
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
           Online
         </span>
       </div>
@@ -25,17 +25,17 @@ export function Sidebar({ sessions, currentId, onSelect, onNew }: Props) {
         <button
           type="button"
           onClick={onNew}
-          className="w-full rounded-lg bg-white/8 px-3 py-2 text-left text-sm text-zinc-100 transition hover:bg-white/12"
+          className="w-full rounded-lg bg-sky-50 px-3 py-2 text-left text-sm text-sky-800 transition hover:bg-sky-100"
         >
           + New Agent
         </button>
       </div>
-      <p className="mt-6 px-4 text-[11px] tracking-[0.18em] text-zinc-500 uppercase">
+      <p className="mt-6 px-4 text-[11px] tracking-[0.18em] text-slate-400 uppercase">
         History
       </p>
       <div className="mt-2 flex-1 space-y-1 overflow-y-auto px-2 pb-4">
         {sessions.length === 0 ? (
-          <p className="px-2 text-sm text-zinc-500">まだ会話はありません</p>
+          <p className="px-2 text-sm text-slate-400">まだ会話はありません</p>
         ) : (
           sessions.map((session) => (
             <button
@@ -44,8 +44,8 @@ export function Sidebar({ sessions, currentId, onSelect, onNew }: Props) {
               onClick={() => onSelect(session.id)}
               className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
                 currentId === session.id
-                  ? "bg-cyan-400/12 text-cyan-100"
-                  : "text-zinc-300 hover:bg-white/6"
+                  ? "bg-sky-100 text-sky-900"
+                  : "text-slate-600 hover:bg-slate-50"
               }`}
             >
               {session.title}

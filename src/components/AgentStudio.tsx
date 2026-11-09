@@ -254,7 +254,7 @@ export function AgentStudio() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0b0d12] text-zinc-100">
+    <div className="flex h-screen overflow-hidden bg-[#f4f7fb] text-slate-800">
       <Sidebar
         sessions={sessions}
         currentId={sessionId}
@@ -262,12 +262,12 @@ export function AgentStudio() {
         onNew={startNew}
       />
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-white/8 px-6 py-4">
+        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
           <div>
-            <p className="text-sm text-zinc-400">AI Agent</p>
-            <h1 className="text-lg font-medium">何でも指示してください</h1>
+            <p className="text-sm text-slate-500">AI Agent</p>
+            <h1 className="text-lg font-medium text-slate-900">何でも指示してください</h1>
           </div>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-slate-400">
             Orchestrator → Tools → Verifier
           </p>
         </header>

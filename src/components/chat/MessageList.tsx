@@ -1,3 +1,4 @@
+import { MarkdownBody } from "@/components/chat/MarkdownBody";
 import type { ChatMessage } from "@/types/agent";
 
 type Props = {
@@ -10,8 +11,8 @@ export function MessageList({ messages, streaming }: Props) {
     return (
       <div className="flex flex-1 items-center justify-center px-8 text-center">
         <div>
-          <p className="text-lg text-zinc-200">何でも指示してください</p>
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="text-lg text-slate-800">何でも指示してください</p>
+          <p className="mt-2 text-sm text-slate-500">
             例: 東京と大阪の人口を調べて、比較して。結果をメモに保存して。
           </p>
         </div>
@@ -27,23 +28,26 @@ export function MessageList({ messages, streaming }: Props) {
           className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
         >
           <div
-            className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
+            className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-6 ${
               message.role === "user"
-                ? "bg-cyan-400/15 text-cyan-50"
-                : "bg-white/6 text-zinc-200"
+                ? "bg-sky-500 text-white"
+                : "border border-slate-200 bg-white text-slate-700"
             }`}
           >
             {message.role === "assistant" && (
-              <p className="mb-1 text-[11px] tracking-wide text-zinc-500 uppercase">
+              <p className="mb-1 text-[11px] tracking-wide text-slate-400 uppercase">
                 Agent
               </p>
             )}
-            {message.content}
+            <MarkdownBody
+              content={message.content}
+              tone={message.role === "user" ? "user" : "assistant"}
+            />
           </div>
         </div>
       ))}
       {streaming && (
-        <p className="text-sm text-zinc-500">情報を検索して比較します。結果をまとめます…</p>
+        <p className="text-sm text-slate-500">情報を検索して比較します。結果をまとめます…</p>
       )}
     </div>
   );
