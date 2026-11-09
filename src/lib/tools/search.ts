@@ -31,10 +31,12 @@ export async function searchKnowledge(
       })),
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Notionからの取得に失敗しました";
     return {
       results: [],
       mode: "rag",
-      message: error instanceof Error ? error.message : "Notionからの取得に失敗しました",
+      error: true,
+      message,
     };
   }
 }

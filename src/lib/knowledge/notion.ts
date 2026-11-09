@@ -190,7 +190,16 @@ export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
 
     for (const item of response.results) {
       if (!isFullPage(item) || item.in_trash) continue;
-      const content = await blocksToText(client, item.id);
+      const body = await blocksToText(client, item.id);
+      const extras = Object.entries(item.properties)
+        .filter(([, property]) => property.type !== "title")
+        .map(([name, property]) => {
+          const value = propertyText(property);
+          return value ? `${name}：${value}` : "";
+        })
+        .filter(Boolean)
+        .join("\n");
+      const content = [extras, body].filter(Boolean).join("\n\n");
       if (!content) continue;
       docs.push({
         id: item.id,

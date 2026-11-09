@@ -13,7 +13,14 @@ let indexing: Promise<{ indexed: boolean; count: number; model: string }> | null
 
 async function indexNow() {
   if (!hasNotionConfig()) {
-    throw new Error("NOTION_TOKEN と NOTION_DATABASE_ID を設定してください");
+    const count = await prisma.knowledgeChunk.count();
+    if (count > 0) {
+      const existing = await prisma.knowledgeChunk.findFirst({
+        select: { model: true },
+      });
+      return { indexed: false, count, model: existing?.model ?? "cached" };
+    }
+    throw new Error("NOTION_TOKEN と NOTION_DATABASE_ID を設定してください。開発サーバーを起動し直すと .env.local が読み込まれます");
   }
 
   const docs = await fetchNotionDocs();
