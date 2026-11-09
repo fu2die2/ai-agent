@@ -1,4 +1,4 @@
-import { saveMemo as persistMemo } from "@/lib/store/db";
+import { saveMemo } from "@/lib/store/memos";
 import type { JsonValue } from "@/types/tool";
 
 export async function saveMemoTool(
@@ -10,12 +10,7 @@ export async function saveMemoTool(
     throw new Error("content が空です");
   }
 
-  const memo = await persistMemo({
-    id: `memo_${Date.now()}`,
-    title,
-    content,
-    createdAt: Date.now(),
-  });
+  const memo = await saveMemo({ title, content });
 
   return {
     saved: true,

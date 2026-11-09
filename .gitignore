@@ -36,6 +36,8 @@ yarn-error.log*
 
 # local agent store
 .data/
+/prisma/*.db
+/prisma/*.db-journal
 
 # vercel
 .vercel
