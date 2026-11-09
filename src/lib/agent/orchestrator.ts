@@ -22,12 +22,12 @@ const MAX_TOOL_ROUNDS = 5;
 const AGENT_INSTRUCTIONS = `あなたはAIエージェントです。
 ユーザーの依頼を達成してください。
 必要に応じて利用可能なToolを実行してください。
-取得した情報の出典を保持してください。
-不明なことは断定せず、不足を明示してください。
+searchKnowledge の結果は Notion から取得した社内文書の抜粋です。その抜粋だけを根拠に答え、出典を残してください。
+抜粋に無い数値や規定は補完せず、不足を明示してください。
 最終回答は日本語で、要点が分かるように書いてください。
 
 Toolの使い分け:
-- searchKnowledge: 社内ナレッジ専用。無い場合は無理に使わない。
+- searchKnowledge: Notionの社内ナレッジ（就業規則・売上・資産・福利厚生など）。一般雑学には使わない。
 - answerQuestion: 一般的な事実質問。検索は Gemini に任せる。
 - calculate: 計算が必要なとき。
 - saveMemo: ユーザーが保存を依頼したときだけ。`;
@@ -52,7 +52,11 @@ function asArgs(value: unknown): Record<string, JsonValue> {
 
 function demoPlan(message: string) {
   const calls: { name: string; args: Record<string, JsonValue> }[] = [];
-  if (/調べ|比較|人口|React|Next|RAG|違い/.test(message)) {
+  if (
+    /調べ|比較|就業|有給|休暇|リモート|給与|売上|資産|貸借|福利|経費|ヘリオス|社内/.test(
+      message,
+    )
+  ) {
     calls.push({ name: "searchKnowledge", args: { query: message } });
   }
   if (/何種類|いつ|誰|どこ|とは|教えて|ポケモン|pokemon/i.test(message)) {
@@ -112,14 +116,20 @@ function demoAnswer(message: string, toolResults: JsonValue[]) {
       }
     }
     if (result && typeof result === "object" && "results" in result) {
-      const docs = (result as { results: { title: string; content: string; source: string }[] })
-        .results;
+      const docs = (
+        result as {
+          results: { title: string; content: string; source: string; score?: number }[];
+        }
+      ).results;
       if (docs.length === 0) {
         lines.push("検索: 一致するナレッジはありませんでした。");
       } else {
         for (const doc of docs) {
           lines.push(`【${doc.title}】(${doc.source})`);
           lines.push(doc.content);
+          if ("score" in doc && typeof doc.score === "number") {
+            lines.push(`関連度: ${doc.score}`);
+          }
           lines.push("");
         }
       }

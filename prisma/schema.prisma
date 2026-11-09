@@ -15,3 +15,22 @@ model Memo {
 
   @@map("memos")
 }
+
+model KnowledgeChunk {
+  id         String   @id
+  documentId String
+  chunkIndex Int
+  title      String
+  category   String
+  source     String
+  content    String
+  keywords   String   @default("")
+  embedding  Json
+  model      String
+  corpusHash String
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+  @@index([corpusHash])
+  @@map("knowledge_chunks")
+}

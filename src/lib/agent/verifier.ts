@@ -28,7 +28,7 @@ function heuristicVerify(params: {
   if (/保存|メモ/.test(request) && !JSON.stringify(params.toolResults).includes("saved")) {
     issues.push("保存依頼があるのに saveMemo の成功結果がありません");
   }
-  if (/調べ|比較|人口/.test(request) && params.toolResults.length === 0) {
+  if (/調べ|比較|就業|有給|売上|資産/.test(request) && params.toolResults.length === 0) {
     issues.push("調査依頼なのに Tool 結果がありません");
   }
 

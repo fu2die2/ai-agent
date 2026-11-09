@@ -9,13 +9,13 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "searchKnowledge",
     description:
-      "社内ナレッジやサンプル統計だけを検索する。一般的な雑学・時事・百科事典的な質問には使わない。",
+      "Notionの社内ナレッジを取得・チャンクして検索する。就業規則・売上・資産など。一般雑学には使わない。",
     parameters: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "検索クエリ。固有名詞や比較対象を含める。",
+          description: "例: 有給休暇の日数、FY2025の売上、現金預金の残高",
         },
       },
       required: ["query"],
