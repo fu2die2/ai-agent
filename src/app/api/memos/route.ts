@@ -1,4 +1,4 @@
-import { listMemos, saveMemo } from "@/lib/store/db";
+import { listMemos, saveMemo } from "@/lib/store/memos";
 
 export async function GET() {
   const memos = await listMemos();
@@ -11,10 +11,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "content は必須です" }, { status: 400 });
   }
   const memo = await saveMemo({
-    id: `memo_${Date.now()}`,
     title: body.title?.trim() || "無題のメモ",
     content: body.content.trim(),
-    createdAt: Date.now(),
   });
   return Response.json({ memo });
 }

@@ -1,10 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Memo, SessionRecord, SessionSummary } from "@/types/agent";
+import type { SessionRecord, SessionSummary } from "@/types/agent";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const SESSIONS_PATH = path.join(DATA_DIR, "sessions.json");
-const MEMOS_PATH = path.join(DATA_DIR, "memos.json");
 
 type StoreFile<T> = { items: T[] };
 
@@ -48,16 +47,4 @@ export async function saveSession(session: SessionRecord) {
     sessions.push(session);
   }
   await writeStore(SESSIONS_PATH, sessions);
-}
-
-export async function listMemos(): Promise<Memo[]> {
-  const memos = await readStore<Memo>(MEMOS_PATH);
-  return memos.sort((a, b) => b.createdAt - a.createdAt);
-}
-
-export async function saveMemo(memo: Memo) {
-  const memos = await readStore<Memo>(MEMOS_PATH);
-  memos.push(memo);
-  await writeStore(MEMOS_PATH, memos);
-  return memo;
 }

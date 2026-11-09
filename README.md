@@ -18,10 +18,11 @@ Next.js 16 で動く AI エージェントのポートフォリオ用 MVP です
 cp .env.example .env.local
 # Google AI Studio で無料の GEMINI_API_KEY を発行して入れる
 
+npm run db:migrate
 npm run dev
 ```
 
-キーは [Google AI Studio](https://aistudio.google.com/apikey) から取得できます。
+キーは [Google AI Studio](https://aistudio.google.com/apikey) から取得できます。メモは Prisma + PostgreSQL に保存します。
 
 ブラウザで http://localhost:3000 を開きます。
 
