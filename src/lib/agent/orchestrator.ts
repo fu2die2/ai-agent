@@ -1,0 +1,398 @@
+import type { Content, FunctionCall } from "@google/generative-ai";
+import {
+  generateAgentTurn,
+  generateText,
+  hasGeminiKey,
+  isQuotaError,
+} from "@/lib/ai/client";
+import { verifyResult } from "@/lib/agent/verifier";
+import { executeTool, toGeminiTools } from "@/lib/tools/registry";
+import { getSession, saveSession } from "@/lib/store/db";
+import type {
+  AgentEvent,
+  ChatMessage,
+  SessionRecord,
+  TraceStep,
+  VerificationResult,
+} from "@/types/agent";
+import type { JsonValue, ToolExecution } from "@/types/tool";
+
+const MAX_TOOL_ROUNDS = 5;
+
+const AGENT_INSTRUCTIONS = `あなたはAIエージェントです。
+ユーザーの依頼を達成してください。
+必要に応じて利用可能なToolを実行してください。
+取得した情報の出典を保持してください。
+不明なことは断定せず、不足を明示してください。
+最終回答は日本語で、要点が分かるように書いてください。`;
+
+type Emit = (event: AgentEvent) => void;
+
+function id(prefix: string) {
+  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function titleFromMessage(message: string) {
+  const trimmed = message.replace(/\s+/g, " ").trim();
+  return trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed || "新しい会話";
+}
+
+function asArgs(value: unknown): Record<string, JsonValue> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, JsonValue>;
+  }
+  return {};
+}
+
+function demoPlan(message: string) {
+  const calls: { name: string; args: Record<string, JsonValue> }[] = [];
+  if (/調べ|比較|人口|React|Next|RAG|違い/.test(message)) {
+    calls.push({ name: "searchKnowledge", args: { query: message } });
+  }
+  if (/計算|合計|平均|差分|比率|%/.test(message) || /人口/.test(message)) {
+    if (/東京/.test(message) && /大阪/.test(message)) {
+      calls.push({
+        name: "calculate",
+        args: { expression: "(14000000-8800000)/14000000*100" },
+      });
+    }
+  }
+  if (/保存|メモ/.test(message)) {
+    calls.push({
+      name: "saveMemo",
+      args: {
+        title: titleFromMessage(message),
+        content: "エージェントがまとめた調査メモ（デモモード）",
+      },
+    });
+  }
+  if (calls.length === 0) {
+    calls.push({ name: "searchKnowledge", args: { query: message } });
+  }
+  return calls;
+}
+
+function demoAnswer(message: string, toolResults: JsonValue[]) {
+  const lines = [
+    "デモモードで処理しました。`.env.local` に GEMINI_API_KEY を入れると、Gemini が Tool を自律選択します。",
+    "",
+  ];
+  for (const result of toolResults) {
+    if (result && typeof result === "object" && "results" in result) {
+      const docs = (result as { results: { title: string; content: string; source: string }[] })
+        .results;
+      if (docs.length === 0) {
+        lines.push("検索: 一致するナレッジはありませんでした。");
+      } else {
+        for (const doc of docs) {
+          lines.push(`【${doc.title}】(${doc.source})`);
+          lines.push(doc.content);
+          lines.push("");
+        }
+      }
+    }
+    if (result && typeof result === "object" && "result" in result) {
+      const calc = result as { expression: string; result: number };
+      lines.push(`計算: ${calc.expression} = ${calc.result}`);
+      lines.push("");
+    }
+    if (result && typeof result === "object" && "saved" in result) {
+      const memo = result as { title: string; saved: boolean };
+      lines.push(`メモ保存: ${memo.saved ? "成功" : "失敗"} / ${memo.title}`);
+    }
+  }
+  lines.push("", `依頼: ${message}`);
+  return lines.join("\n");
+}
+
+async function ensureSession(sessionId: string, message: string): Promise<SessionRecord> {
+  const existing = await getSession(sessionId);
+  if (existing) return existing;
+  return {
+    id: sessionId,
+    title: titleFromMessage(message),
+    updatedAt: Date.now(),
+    messages: [],
+    traces: [],
+    toolExecutions: [],
+  };
+}
+
+async function runOneTool(options: {
+  toolId: string;
+  name: string;
+  args: Record<string, JsonValue>;
+  emit: Emit;
+  traces: TraceStep[];
+  executions: ToolExecution[];
+  toolResults: JsonValue[];
+}) {
+  const { toolId, name, args, emit, traces, executions, toolResults } = options;
+  emit({ type: "tool.started", data: { id: toolId, name, arguments: args } });
+  const execution: ToolExecution = {
+    id: toolId,
+    name,
+    status: "running",
+    arguments: args,
+    startedAt: Date.now(),
+  };
+  executions.push(execution);
+  traces.push({
+    id: id("trace"),
+    kind: "tool",
+    title: name,
+    toolName: name,
+    status: "running",
+    detail: "実行中",
+  });
+
+  try {
+    const result = await executeTool(name, args);
+    execution.status = "success";
+    execution.result = result;
+    execution.endedAt = Date.now();
+    toolResults.push(result);
+    traces[traces.length - 1].status = "completed";
+    traces[traces.length - 1].detail = "Success";
+    emit({
+      type: "tool.completed",
+      data: { id: toolId, name, status: "success", result },
+    });
+    return { ok: true as const, result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Tool 実行に失敗しました";
+    execution.status = "error";
+    execution.error = message;
+    execution.endedAt = Date.now();
+    traces[traces.length - 1].status = "failed";
+    traces[traces.length - 1].detail = message;
+    emit({
+      type: "tool.completed",
+      data: { id: toolId, name, status: "error", error: message },
+    });
+    return { ok: false as const, error: message };
+  }
+}
+
+function toGeminiHistory(messages: ChatMessage[]): Content[] {
+  return messages.map((item) => ({
+    role: item.role === "assistant" ? "model" : "user",
+    parts: [{ text: item.content }],
+  }));
+}
+
+export async function runAgent(options: {
+  sessionId: string;
+  message: string;
+  emit: Emit;
+}) {
+  const started = Date.now();
+  const { emit } = options;
+  const sessionId = options.sessionId || id("session");
+  const userMessage: ChatMessage = {
+    id: id("msg"),
+    role: "user",
+    content: options.message,
+    createdAt: Date.now(),
+  };
+
+  emit({ type: "agent.started", data: { status: "running", sessionId } });
+  emit({
+    type: "agent.planning",
+    data: { status: "running", detail: "依頼を分解し、必要な Tool を判断します" },
+  });
+
+  const session = await ensureSession(sessionId, options.message);
+  session.messages.push(userMessage);
+  session.traces = [];
+  session.toolExecutions = [];
+
+  const traces: TraceStep[] = [
+    {
+      id: id("trace"),
+      kind: "planning",
+      title: "Agent Planning",
+      detail: "依頼を分析して実行計画を立てています",
+      status: "running",
+    },
+  ];
+  const executions: ToolExecution[] = [];
+  const toolResults: JsonValue[] = [];
+
+  try {
+    let answer = "";
+
+    if (!hasGeminiKey()) {
+      const calls = demoPlan(options.message);
+      traces[0].status = "completed";
+      traces[0].detail = "デモプランナーが Tool を選択しました";
+      emit({
+        type: "agent.planning",
+        data: { status: "completed", detail: traces[0].detail },
+      });
+
+      for (const call of calls) {
+        await runOneTool({
+          toolId: id("tool"),
+          name: call.name,
+          args: call.args,
+          emit,
+          traces,
+          executions,
+          toolResults,
+        });
+      }
+      answer = demoAnswer(options.message, toolResults);
+    } else {
+      const contents = toGeminiHistory(session.messages);
+      let rounds = 0;
+      let finished = false;
+
+      while (rounds < MAX_TOOL_ROUNDS && !finished) {
+        rounds += 1;
+        const turn = await generateAgentTurn({
+          systemInstruction: AGENT_INSTRUCTIONS,
+          tools: toGeminiTools(),
+          contents,
+        });
+
+        if (rounds === 1) {
+          traces[0].status = "completed";
+          traces[0].detail = turn.functionCalls.length
+            ? "必要な Tool を選択しました"
+            : "Tool なしで回答します";
+          emit({
+            type: "agent.planning",
+            data: { status: "completed", detail: traces[0].detail },
+          });
+        }
+
+        if (turn.functionCalls.length > 0) {
+          contents.push(
+            turn.modelContent ?? {
+              role: "model",
+              parts: turn.functionCalls.map((call: FunctionCall) => ({
+                functionCall: call,
+              })),
+            },
+          );
+
+          const responseParts = [];
+          for (const call of turn.functionCalls) {
+            const args = asArgs(call.args);
+            const toolId = id("tool");
+            const ran = await runOneTool({
+              toolId,
+              name: call.name,
+              args,
+              emit,
+              traces,
+              executions,
+              toolResults,
+            });
+            const callId = "id" in call && typeof call.id === "string" ? call.id : call.name;
+            responseParts.push({
+              functionResponse: {
+                id: callId,
+                name: call.name,
+                response: ran.ok ? { result: ran.result } : { error: ran.error },
+              },
+            });
+          }
+          contents.push({
+            role: "user",
+            parts: responseParts,
+          });
+          continue;
+        }
+
+        answer = turn.text;
+        finished = true;
+      }
+
+      if (!answer) {
+        answer = "Tool 実行の上限に達したため、ここまでの結果をもとに回答します。";
+      }
+    }
+
+    emit({ type: "verification.started", data: { status: "running" } });
+    traces.push({
+      id: id("trace"),
+      kind: "verification",
+      title: "Result Verifier",
+      status: "running",
+      detail: "回答と Tool 結果を照合しています",
+    });
+
+    let verification: VerificationResult = await verifyResult({
+      userRequest: options.message,
+      toolResults,
+      finalAnswer: answer,
+    });
+
+    if (verification.status === "failed" && hasGeminiKey()) {
+      try {
+        answer = await generateText(
+          `元の依頼:\n${options.message}\n\n現在の回答:\n${answer}\n\n検証で指摘された問題:\n${verification.issues.join("\n")}\n\n指摘を解消した最終回答だけを返してください。`,
+          AGENT_INSTRUCTIONS,
+        );
+        verification = await verifyResult({
+          userRequest: options.message,
+          toolResults,
+          finalAnswer: answer,
+        });
+      } catch (error) {
+        if (!isQuotaError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    traces[traces.length - 1].status =
+      verification.status === "passed" ? "passed" : "failed";
+    traces[traces.length - 1].detail = verification.summary;
+    emit({ type: "verification.completed", data: verification });
+
+    traces.push({
+      id: id("trace"),
+      kind: "response",
+      title: "Final Response",
+      status: "completed",
+      detail: "分析結果をユーザーに返却",
+    });
+
+    const assistantMessage: ChatMessage = {
+      id: id("msg"),
+      role: "assistant",
+      content: answer,
+      createdAt: Date.now(),
+    };
+    session.messages.push(assistantMessage);
+    session.traces = traces;
+    session.toolExecutions = executions;
+    session.lastAnswer = answer;
+    session.verification = verification;
+    session.updatedAt = Date.now();
+    if (session.messages.filter((item) => item.role === "user").length === 1) {
+      session.title = titleFromMessage(options.message);
+    }
+    await saveSession(session);
+
+    emit({ type: "agent.delta", data: { content: answer } });
+    emit({
+      type: "agent.completed",
+      data: {
+        status: "completed",
+        answer,
+        verification,
+        summary: {
+          toolCalls: executions.length,
+          durationMs: Date.now() - started,
+        },
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "エージェント実行に失敗しました";
+    emit({ type: "agent.error", data: { message } });
+  }
+}
