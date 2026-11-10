@@ -27,7 +27,7 @@ import type {
 } from "@/types/agent";
 import type { JsonValue, ToolExecution } from "@/types/tool";
 
-const MAX_TOOL_ROUNDS = 5;
+const MAX_TOOL_ROUNDS = 10;
 
 const AGENT_INSTRUCTIONS = `あなたはAIエージェントです。
 ユーザーの依頼を達成してください。
@@ -41,10 +41,15 @@ searchKnowledge の結果は Notion から取得した社内文書の抜粋で�
 最終回答は日本語で、要点が分かるように書いてください。
 
 Toolの使い分け:
-- searchKnowledge: Notionの社内ナレッジ（就業規則・売上・資産・福利厚生など）。一般雑学には使わない。
+- searchKnowledge: Notionの社内ナレッジ（就業規則・売上・資産・福利厚生など）。一般雑学には使わない。読み取り専用。
+- listNotionPages: Notionのページ一覧。追記先を探すとき。
+- createNotionPage: Notionに新しいページを作って本文を書く。ユーザーが作成・書いてと依頼したとき。
+- appendNotionPage: 既存Notionページの末尾に追記する。
 - answerQuestion: 一般的な事実質問。検索は Gemini に任せる。
 - calculate: 計算が必要なとき。
-- saveMemo: ユーザーが保存を依頼したときだけ。`;
+- saveMemo: アプリ内メモ。Notionへ書いてとは違う。
+
+Notionに書いたあとは、作成・追記結果の url を Markdown リンクで返してください。`;
 
 type Emit = (event: AgentEvent) => void;
 
@@ -88,7 +93,25 @@ function demoPlan(message: string) {
       });
     }
   }
-  if (/保存|メモ/.test(message)) {
+  if (/Notion.*(作|書|追記|追加)|ページを作|ページを追加/.test(message)) {
+    if (/追記|書き足/.test(message)) {
+      calls.push({
+        name: "appendNotionPage",
+        args: {
+          title: titleFromMessage(message),
+          content: "デモモードの追記です。GEMINI_API_KEY があると本文を書けます。",
+        },
+      });
+    } else {
+      calls.push({
+        name: "createNotionPage",
+        args: {
+          title: titleFromMessage(message),
+          content: "デモモードの新規ページです。GEMINI_API_KEY があると本文を書けます。",
+        },
+      });
+    }
+  } else if (/保存|メモ/.test(message)) {
     calls.push({
       name: "saveMemo",
       args: {
@@ -166,8 +189,21 @@ function demoAnswer(message: string, toolResults: JsonValue[]) {
       lines.push("");
     }
     if (result && typeof result === "object" && "saved" in result) {
-      const memo = result as { title: string; saved: boolean };
-      lines.push(`メモ保存: ${memo.saved ? "成功" : "失敗"} / ${memo.title}`);
+      const saved = result as {
+        title: string;
+        saved: boolean;
+        url?: string;
+        created?: boolean;
+        appended?: boolean;
+      };
+      if (saved.created) {
+        lines.push(`Notionページ作成: ${saved.title}`);
+      } else if (saved.appended) {
+        lines.push(`Notion追記: ${saved.title}`);
+      } else {
+        lines.push(`メモ保存: ${saved.saved ? "成功" : "失敗"} / ${saved.title}`);
+      }
+      if (saved.url) lines.push(saved.url);
     }
   }
   lines.push("", `依頼: ${message}`);

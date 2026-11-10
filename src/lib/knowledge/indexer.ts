@@ -10,7 +10,8 @@ import { hasGeminiKey } from "../ai/client";
 import { prisma } from "../prisma";
 import { chunkDocuments, embedTextForChunk } from "./chunk";
 import { embedTexts } from "./embeddings";
-import { fetchNotionDocs, hasNotionConfig, notionCorpusHash } from "./notion";
+import { hasNotionConfig } from "./notion-client";
+import { fetchNotionDocs, notionCorpusHash } from "./notion";
 
 /** 署名文字列を SHA-256 にして DB の corpusHash と比較できるようにする。 */
 function hashSignature(signature: string) {

@@ -277,7 +277,7 @@ export function AgentStudio() {
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
           <div>
-            <p className="text-sm text-slate-500">AI Agent</p>
+            <p className="text-sm text-slate-500">AI AGENT</p>
             <h1 className="text-lg font-medium text-slate-900">何でも指示してください</h1>
           </div>
           <div className="flex items-center gap-3">

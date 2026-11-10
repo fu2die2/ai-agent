@@ -1,0 +1,50 @@
+/**
+ * Notion SDK の接続だけを担う。
+ * 読み取り（notion.ts）と書き込み（notion-write.ts）の両方から使う。
+ * ここに他の knowledge モジュールを import しない（循環参照を防ぐ）。
+ */
+import { Client, extractDatabaseId, isFullDatabase } from "@notionhq/client";
+
+/** Internal Integration のトークン。NOTION_API_KEY でも可。 */
+function notionToken() {
+  return process.env.NOTION_TOKEN ?? process.env.NOTION_API_KEY ?? "";
+}
+
+/** 対象データベース ID。URL 貼り付けにも対応。 */
+export function notionDatabaseId() {
+  const raw = process.env.NOTION_DATABASE_ID ?? "";
+  return extractDatabaseId(raw) ?? raw.trim();
+}
+
+/** トークンと DB ID の両方が揃っているか。 */
+export function hasNotionConfig() {
+  return Boolean(notionToken() && notionDatabaseId());
+}
+
+/**
+ * Notion ページをブラウザで開く URL。
+ * API が返す url を優先し、無いときはページ ID から組み立てる。
+ */
+export function notionPageUrl(pageId: string, pageUrl?: string) {
+  if (pageUrl?.startsWith("http")) return pageUrl;
+  const compact = pageId.replace(/-/g, "");
+  return compact ? `https://www.notion.so/${compact}` : "";
+}
+
+/** 認証済み Notion SDK クライアント。 */
+export function getNotionClient() {
+  if (!hasNotionConfig()) {
+    throw new Error("NOTION_TOKEN と NOTION_DATABASE_ID を .env.local に設定してください");
+  }
+  return new Client({ auth: notionToken() });
+}
+
+/** データベース ID から、行一覧に使う data_source_id を1つ取る。 */
+export async function resolveDataSourceId(client: Client) {
+  const databaseId = notionDatabaseId();
+  const database = await client.databases.retrieve({ database_id: databaseId });
+  if (!isFullDatabase(database) || database.data_sources.length === 0) {
+    throw new Error("Notionデータベースにデータソースがありません");
+  }
+  return database.data_sources[0].id;
+}

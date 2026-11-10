@@ -30,7 +30,12 @@ function heuristicVerify(params: {
   if (!answer.trim()) {
     issues.push("最終回答が空です");
   }
-  if (/保存|メモ/.test(request) && !JSON.stringify(params.toolResults).includes("saved")) {
+  if (
+    /Notion.*(作|書|追記|追加)|ページを作|ページを追加/.test(request) &&
+    !/url|created|appended/.test(JSON.stringify(params.toolResults))
+  ) {
+    issues.push("Notionへの作成・追記依頼があるのに成功結果がありません");
+  } else if (/保存|メモ/.test(request) && !JSON.stringify(params.toolResults).includes("saved")) {
     issues.push("保存依頼があるのに saveMemo の成功結果がありません");
   }
   if (/調べ|比較|就業|有給|売上|資産/.test(request) && params.toolResults.length === 0) {

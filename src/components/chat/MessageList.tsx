@@ -15,7 +15,7 @@ export function MessageList({ messages, streaming }: Props) {
         <div>
           <p className="text-lg text-slate-800">何でも指示してください</p>
           <p className="mt-2 text-sm text-slate-500">
-            例: 有給は何日？ FY2025の売上と現金預金を調べて。
+            例: 有給は何日？ Notionに議事メモのページを作って。
           </p>
         </div>
       </div>

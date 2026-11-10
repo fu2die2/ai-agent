@@ -11,50 +11,14 @@
 import {
   Client,
   collectPaginatedAPI,
-  extractDatabaseId,
   isFullBlock,
-  isFullDatabase,
   isFullPage,
   type BlockObjectResponse,
   type PageObjectResponse,
   type RichTextItemResponse,
 } from "@notionhq/client";
+import { getNotionClient, notionPageUrl, resolveDataSourceId } from "./notion-client";
 import type { KnowledgeDoc } from "./types";
-
-/** Internal Integration のトークン。NOTION_API_KEY でも可。 */
-function notionToken() {
-  return process.env.NOTION_TOKEN ?? process.env.NOTION_API_KEY ?? "";
-}
-
-/** 対象データベース ID。URL 貼り付けにも対応。 */
-function notionDatabaseId() {
-  const raw = process.env.NOTION_DATABASE_ID ?? "";
-  // URL ごと貼っても 32 文字の ID に正規化する。v= のビュー ID は使わない
-  return extractDatabaseId(raw) ?? raw.trim();
-}
-
-/** トークンと DB ID の両方が揃っているか。 */
-export function hasNotionConfig() {
-  return Boolean(notionToken() && notionDatabaseId());
-}
-
-/**
- * Notion ページをブラウザで開く URL。
- * API が返す url を優先し、無いときはページ ID から組み立てる。
- */
-export function notionPageUrl(pageId: string, pageUrl?: string) {
-  if (pageUrl?.startsWith("http")) return pageUrl;
-  const compact = pageId.replace(/-/g, "");
-  return compact ? `https://www.notion.so/${compact}` : "";
-}
-
-/** 認証済み Notion SDK クライアント。 */
-function getClient() {
-  if (!hasNotionConfig()) {
-    throw new Error("NOTION_TOKEN と NOTION_DATABASE_ID を .env.local に設定してください");
-  }
-  return new Client({ auth: notionToken() });
-}
 
 /** rich_text 配列をプレーン文字列に連結する。 */
 function richText(items: RichTextItemResponse[] | undefined) {
@@ -102,7 +66,7 @@ function findProperty(
 }
 
 /** ページタイトル。title 型の列を優先し、無ければ「ページ名」など。 */
-function titleOf(page: PageObjectResponse) {
+export function titleOf(page: PageObjectResponse) {
   const titled = Object.values(page.properties).find((property) => property.type === "title");
   const fromTitle = propertyText(titled);
   if (fromTitle.trim()) return fromTitle.trim();
@@ -199,19 +163,9 @@ async function blocksToText(client: Client, parentId: string): Promise<string> {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** データベース ID から、行一覧に使う data_source_id を1つ取る。 */
-async function resolveDataSourceId(client: Client) {
-  const databaseId = notionDatabaseId();
-  const database = await client.databases.retrieve({ database_id: databaseId });
-  if (!isFullDatabase(database) || database.data_sources.length === 0) {
-    throw new Error("Notionデータベースにデータソースがありません");
-  }
-  return database.data_sources[0].id;
-}
-
 /** 対象 DB の全ページを KnowledgeDoc にする。本文が空でもプロパティがあれば残す。 */
 export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
-  const client = getClient();
+  const client = getNotionClient();
   const dataSourceId = await resolveDataSourceId(client);
   const docs: KnowledgeDoc[] = [];
   let cursor: string | undefined;

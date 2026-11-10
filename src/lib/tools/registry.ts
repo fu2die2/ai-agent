@@ -8,6 +8,11 @@ import { SchemaType, type FunctionDeclaration } from "@google/generative-ai";
 import { answerQuestion } from "./answerQuestion";
 import { calculate } from "./calculator";
 import { saveMemoTool } from "./memo";
+import {
+  appendNotionPageTool,
+  createNotionPageTool,
+  listNotionPagesTool,
+} from "./notionPages";
 import { searchKnowledge } from "./search";
 import type { JsonValue, ToolDefinition, ToolHandler, ToolName } from "@/types/tool";
 
@@ -68,6 +73,47 @@ export const toolDefinitions: ToolDefinition[] = [
       required: ["title", "content"],
     },
   },
+  {
+    name: "listNotionPages",
+    description:
+      "社内ナレッジのNotionデータベース内のページ一覧。追記前に対象を探すとき使う。query はタイトルの部分一致。",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "タイトルで絞る語。空なら全件" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "createNotionPage",
+    description:
+      "社内ナレッジのNotionデータベースに新しいページを作り、本文を書く。ユーザーがページ作成・Notionへ書いてと依頼したとき使う。",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "ページタイトル" },
+        content: { type: "string", description: "本文。Markdown可（見出し・箇条書き・段落）" },
+        category: { type: "string", description: "カテゴリ列があれば設定。例: 総務" },
+        keywords: { type: "string", description: "キーワード。カンマ区切り" },
+      },
+      required: ["title", "content"],
+    },
+  },
+  {
+    name: "appendNotionPage",
+    description:
+      "既存のNotionページ末尾に本文を追記する。pageId（URLでも可）か title のどちらかが必要。",
+    parameters: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "追記する本文。Markdown可" },
+        pageId: { type: "string", description: "ページIDまたはNotionのURL" },
+        title: { type: "string", description: "pageIdが無いときのページタイトル" },
+      },
+      required: ["content"],
+    },
+  },
 ];
 
 const handlers: Record<ToolName, ToolHandler> = {
@@ -75,6 +121,9 @@ const handlers: Record<ToolName, ToolHandler> = {
   answerQuestion,
   calculate,
   saveMemo: saveMemoTool,
+  listNotionPages: listNotionPagesTool,
+  createNotionPage: createNotionPageTool,
+  appendNotionPage: appendNotionPageTool,
 };
 
 /** 定義一覧。/api/tools がこれをそのまま返す。 */

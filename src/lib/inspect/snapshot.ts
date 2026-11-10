@@ -4,7 +4,7 @@
  */
 import { hasGeminiKey } from "@/lib/ai/client";
 import { asNumberVector } from "@/lib/knowledge/embeddings";
-import { hasNotionConfig, notionPageUrl } from "@/lib/knowledge/notion";
+import { hasNotionConfig, notionPageUrl } from "@/lib/knowledge/notion-client";
 import { prisma } from "@/lib/prisma";
 import { listSessions } from "@/lib/store/db";
 import { listMemos } from "@/lib/store/memos";
@@ -28,7 +28,7 @@ function flowSteps() {
     { step: "1. ユーザー入力", detail: "ブラウザのチャット。送信後はセッションの messages に入る" },
     { step: "2. Orchestrator", detail: "Gemini が Tool を選ぶ。途中経過は SSE と session.eventLog" },
     { step: "3. searchKnowledge", detail: "Notion → チャンク → embedding。本体は PostgreSQL knowledge_chunks" },
-    { step: "4. その他 Tool", detail: "calculate はメモリ上、saveMemo は PostgreSQL memos" },
+    { step: "4. その他 Tool", detail: "calculate はメモリ上、saveMemo は PostgreSQL memos。createNotionPage / appendNotionPage は Notion DB へ書き込み" },
     { step: "5. Verifier / 回答", detail: "session.verification と lastAnswer。会話全体は .data/sessions.json" },
   ];
 }

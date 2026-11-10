@@ -5,7 +5,14 @@
  * 実際の実行は src/lib/tools/registry.ts が許可リスト経由で行う。
  * 許可されていない名前は呼べない。
  */
-export type ToolName = "searchKnowledge" | "answerQuestion" | "calculate" | "saveMemo";
+export type ToolName =
+  | "searchKnowledge"
+  | "answerQuestion"
+  | "calculate"
+  | "saveMemo"
+  | "listNotionPages"
+  | "createNotionPage"
+  | "appendNotionPage";
 
 export type ToolStatus = "pending" | "running" | "success" | "error";
 

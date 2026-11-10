@@ -12,7 +12,7 @@ import { prisma } from "../prisma";
 import type { KnowledgeChunkInput } from "./chunk-types";
 import { asNumberVector, cosineSimilarity, embedTexts } from "./embeddings";
 import { ensureKnowledgeIndex } from "./indexer";
-import { notionPageUrl } from "./notion";
+import { notionPageUrl } from "./notion-client";
 
 export type RetrievedChunk = {
   title: string;
