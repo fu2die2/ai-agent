@@ -7,6 +7,8 @@ export type KnowledgeDoc = {
   title: string;
   category: string;
   source: string;
+  /** Notion ページをブラウザで開く URL。 */
+  url: string;
   keywords: string[];
   content: string;
   /** Notion の更新時刻。これが変わったら再インデックスする。 */

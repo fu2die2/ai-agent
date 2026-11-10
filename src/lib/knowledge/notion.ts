@@ -38,6 +38,16 @@ export function hasNotionConfig() {
   return Boolean(notionToken() && notionDatabaseId());
 }
 
+/**
+ * Notion ページをブラウザで開く URL。
+ * API が返す url を優先し、無いときはページ ID から組み立てる。
+ */
+export function notionPageUrl(pageId: string, pageUrl?: string) {
+  if (pageUrl?.startsWith("http")) return pageUrl;
+  const compact = pageId.replace(/-/g, "");
+  return compact ? `https://www.notion.so/${compact}` : "";
+}
+
 /** 認証済み Notion SDK クライアント。 */
 function getClient() {
   if (!hasNotionConfig()) {
@@ -231,6 +241,7 @@ export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
         title: titleOf(item),
         category: propertyText(findProperty(item.properties, ["カテゴリ", "category"])),
         source: propertyText(findProperty(item.properties, ["出典", "source"])) || item.url,
+        url: notionPageUrl(item.id, item.url),
         keywords: keywordsOf(propertyText(findProperty(item.properties, ["キーワード", "keywords", "tags"]))),
         content,
         lastEditedTime: item.last_edited_time,
@@ -246,7 +257,7 @@ export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
 /** ページ ID と更新時刻だけを並べた署名。中身の再取得なしで「変わったか」を見る。 */
 export function notionCorpusHash(docs: KnowledgeDoc[]) {
   const signature = docs
-    .map((doc) => `${doc.id}:${doc.lastEditedTime}`)
+    .map((doc) => `${doc.id}:${doc.lastEditedTime}:${doc.url}`)
     .sort()
     .join("|");
   return signature;

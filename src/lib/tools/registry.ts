@@ -15,7 +15,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "searchKnowledge",
     description:
-      "Notionの社内ナレッジを取得・チャンクして検索する。就業規則・売上・資産など。一般雑学には使わない。",
+      "Notionの社内ナレッジを取得・チャンクして検索する。就業規則・売上・資産など。一般雑学には使わない。結果の citation / url は回答の出典リンクに使う。",
     parameters: {
       type: "object",
       properties: {

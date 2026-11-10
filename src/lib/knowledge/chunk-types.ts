@@ -9,6 +9,7 @@ export type KnowledgeChunkInput = {
   title: string;
   category: string;
   source: string;
+  url: string;
   content: string;
   keywords: string[];
 };

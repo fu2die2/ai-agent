@@ -33,6 +33,10 @@ const AGENT_INSTRUCTIONS = `あなたはAIエージェントです。
 ユーザーの依頼を達成してください。
 必要に応じて利用可能なToolを実行してください。
 searchKnowledge の結果は Notion から取得した社内文書の抜粋です。その抜粋だけを根拠に答え、出典を残してください。
+出典は本文末尾に Markdown リンクで付けてください。各結果の citation（または title と url）を使い、同じページは1つにまとめてください。
+例:
+出典:
+- [就業規則](https://www.notion.so/...)
 抜粋に無い数値や規定は補完せず、不足を明示してください。
 最終回答は日本語で、要点が分かるように書いてください。
 
@@ -133,14 +137,21 @@ function demoAnswer(message: string, toolResults: JsonValue[]) {
     if (result && typeof result === "object" && "results" in result) {
       const docs = (
         result as {
-          results: { title: string; content: string; source: string; score?: number }[];
+          results: {
+            title: string;
+            content: string;
+            source: string;
+            url?: string;
+            citation?: string;
+            score?: number;
+          }[];
         }
       ).results;
       if (docs.length === 0) {
         lines.push("検索: 一致するナレッジはありませんでした。");
       } else {
         for (const doc of docs) {
-          lines.push(`【${doc.title}】(${doc.source})`);
+          lines.push(doc.citation ?? `【${doc.title}】(${doc.url || doc.source})`);
           lines.push(doc.content);
           if ("score" in doc && typeof doc.score === "number") {
             lines.push(`関連度: ${doc.score}`);
@@ -249,7 +260,16 @@ export async function runAgent(options: {
   emit: Emit;
 }) {
   const started = Date.now();
-  const { emit } = options;
+  const eventLog: { at: number; type: AgentEvent["type"]; data: JsonValue }[] = [];
+  /** 画面へ流しつつ、データログ用に同じイベントを残す。 */
+  const emit: Emit = (event) => {
+    eventLog.push({
+      at: Date.now(),
+      type: event.type,
+      data: event.data as JsonValue,
+    });
+    options.emit(event);
+  };
   const sessionId = options.sessionId || id("session");
   const userMessage: ChatMessage = {
     id: id("msg"),
@@ -435,6 +455,7 @@ export async function runAgent(options: {
     session.messages.push(assistantMessage);
     session.traces = traces;
     session.toolExecutions = executions;
+    session.eventLog = eventLog;
     session.lastAnswer = answer;
     session.verification = verification;
     session.updatedAt = Date.now();

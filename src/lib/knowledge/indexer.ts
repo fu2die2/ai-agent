@@ -72,6 +72,7 @@ async function indexNow() {
         title: chunk.title,
         category: chunk.category,
         source: chunk.source,
+        url: chunk.url,
         content: chunk.content,
         keywords: chunk.keywords.join(", "),
         embedding: embeddings[index],

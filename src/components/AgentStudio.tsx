@@ -5,6 +5,7 @@
  * 送信すると /api/agent/stream の SSE を読み、イベントごとに Trace とメッセージを更新する。
  */
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { MessageList } from "@/components/chat/MessageList";
@@ -279,9 +280,15 @@ export function AgentStudio() {
             <p className="text-sm text-slate-500">AI Agent</p>
             <h1 className="text-lg font-medium text-slate-900">何でも指示してください</h1>
           </div>
-          <p className="text-xs text-slate-400">
-            Orchestrator → Tools → Verifier
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-slate-400">Orchestrator → Tools → Verifier</p>
+            <Link
+              href="/logs"
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+            >
+              データログ
+            </Link>
+          </div>
         </header>
         <MessageList messages={messages} streaming={running} />
         <ChatInput

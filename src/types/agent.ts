@@ -47,15 +47,6 @@ export type SessionSummary = {
   updatedAt: number;
 };
 
-/** 1会話の全文。履歴クリックでこのレコードを読み戻す。 */
-export type SessionRecord = SessionSummary & {
-  messages: ChatMessage[];
-  traces: TraceStep[];
-  toolExecutions: ToolExecution[];
-  lastAnswer?: string;
-  verification?: VerificationResult;
-};
-
 /**
  * /api/agent/stream が送る SSE イベント。
  * クライアント（AgentStudio）は event 名で UI を更新する。
@@ -96,6 +87,23 @@ export type AgentEvent =
       };
     }
   | { type: "agent.error"; data: { message: string } };
+
+/** SSE に流した1イベントの記録。データログ画面で処理の流れを見る。 */
+export type LoggedEvent = {
+  at: number;
+  type: AgentEvent["type"];
+  data: JsonValue;
+};
+
+/** 1会話の全文。履歴クリックでこのレコードを読み戻す。 */
+export type SessionRecord = SessionSummary & {
+  messages: ChatMessage[];
+  traces: TraceStep[];
+  toolExecutions: ToolExecution[];
+  eventLog?: LoggedEvent[];
+  lastAnswer?: string;
+  verification?: VerificationResult;
+};
 
 export type Memo = {
   id: string;

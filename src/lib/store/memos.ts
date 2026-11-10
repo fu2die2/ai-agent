@@ -34,3 +34,11 @@ export async function saveMemo(input: { title: string; content: string }): Promi
   });
   return toMemo(row);
 }
+
+/** メモを1件 DELETE する。無い id でも Prisma はエラーにせず件数 0 を返す。 */
+export async function deleteMemo(id: string): Promise<boolean> {
+  const result = await prisma.memo.deleteMany({
+    where: { id },
+  });
+  return result.count > 0;
+}

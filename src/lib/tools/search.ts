@@ -35,6 +35,8 @@ export async function searchKnowledge(
         title: chunk.title,
         category: chunk.category,
         source: chunk.source,
+        url: chunk.url,
+        citation: `[${chunk.title}](${chunk.url})`,
         content: chunk.content,
         score: chunk.score,
       })),

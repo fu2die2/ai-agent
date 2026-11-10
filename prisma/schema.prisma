@@ -29,6 +29,7 @@ model KnowledgeChunk {
   title      String
   category   String
   source     String
+  url        String   @default("")
   content    String
   keywords   String   @default("")
   embedding  Json

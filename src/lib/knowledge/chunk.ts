@@ -62,6 +62,7 @@ export function chunkDocuments(docs: KnowledgeDoc[]): KnowledgeChunkInput[] {
       title: doc.title,
       category: doc.category,
       source: doc.source,
+      url: doc.url,
       content,
       keywords: doc.keywords,
     })),

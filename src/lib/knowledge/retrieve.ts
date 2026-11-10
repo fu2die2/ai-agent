@@ -12,17 +12,35 @@ import { prisma } from "../prisma";
 import type { KnowledgeChunkInput } from "./chunk-types";
 import { asNumberVector, cosineSimilarity, embedTexts } from "./embeddings";
 import { ensureKnowledgeIndex } from "./indexer";
+import { notionPageUrl } from "./notion";
 
 export type RetrievedChunk = {
   title: string;
   category: string;
   source: string;
+  url: string;
   content: string;
   documentId: string;
   score: number;
   cosine: number;
   lexical: number;
 };
+
+type ChunkRow = {
+  id: string;
+  title: string;
+  category: string;
+  source: string;
+  url?: string | null;
+  content: string;
+  keywords: string;
+  documentId: string;
+};
+
+/** チャンクから Notion ページ URL を決める。列が空でも ID から復元する。 */
+function urlOf(row: Pick<ChunkRow, "documentId" | "source" | "url">) {
+  return notionPageUrl(row.documentId, row.url || row.source);
+}
 
 /** 英数字トークンと、日本語は2文字以上の連続を検索語にする。 */
 function tokenize(query: string) {
@@ -74,7 +92,7 @@ function keywordsFrom(value: string) {
 /** 埋め込みが使えないときの順位付け。語句スコアだけの上位 limit 件。 */
 function rankLexical(
   query: string,
-  rows: { id: string; title: string; category: string; source: string; content: string; keywords: string; documentId: string }[],
+  rows: ChunkRow[],
   limit: number,
 ): RetrievedChunk[] {
   return rows
@@ -89,6 +107,7 @@ function rankLexical(
         title: row.title,
         category: row.category,
         source: row.source,
+        url: urlOf(row),
         content: row.content,
         documentId: row.documentId,
         score: lexical,
@@ -136,6 +155,7 @@ export async function retrieveKnowledge(query: string, limit = 4) {
           title: row.title,
           category: row.category,
           source: row.source,
+          url: urlOf(row),
           content: row.content,
           documentId: row.documentId,
           cosine,
