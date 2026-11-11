@@ -3,23 +3,27 @@
  *
  * Next.js の dev ではモジュールがホットリロードされるため、
  * globalThis に載せて接続が増えすぎないようにしている。
- * URL が変わったら作り直す（SQLite → PostgreSQL 切り替え時の取り違え防止）。
+ * クライアントは最初のクエリまで作らない（ビルド時に URL が無くても落ちない）。
  */
 import { PrismaClient } from "@prisma/client";
-
-const connectionString = process.env.DATABASE_URL;
+import { resolveDatabaseUrl } from "@/lib/db-url";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
   prismaUrl?: string;
 };
 
+/** 実行時の接続文字列。 */
+function databaseUrl() {
+  return resolveDatabaseUrl();
+}
+
 /** PostgreSQL 向け PrismaClient を作る。SQLite の URL は拒否する。 */
 function createPrismaClient() {
+  const connectionString = databaseUrl();
   if (!connectionString) {
     throw new Error("DATABASE_URL が設定されていません");
   }
-  // 以前 SQLite だった頃の接続文字列が残っていると readonly エラーになる
   if (connectionString.startsWith("file:")) {
     throw new Error("DATABASE_URL が SQLite のままです。PostgreSQL の接続文字列を設定してください");
   }
@@ -32,10 +36,22 @@ function createPrismaClient() {
   });
 }
 
-export const prisma =
-  globalForPrisma.prisma && globalForPrisma.prismaUrl === connectionString
-    ? globalForPrisma.prisma
-    : createPrismaClient();
+/** 同じ URL なら使い回し、無ければ作る。 */
+function getPrisma() {
+  const connectionString = databaseUrl();
+  if (globalForPrisma.prisma && globalForPrisma.prismaUrl === connectionString) {
+    return globalForPrisma.prisma;
+  }
+  const client = createPrismaClient();
+  globalForPrisma.prisma = client;
+  globalForPrisma.prismaUrl = connectionString;
+  return client;
+}
 
-globalForPrisma.prisma = prisma;
-globalForPrisma.prismaUrl = connectionString;
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, property, receiver) {
+    const client = getPrisma();
+    const value = Reflect.get(client, property, receiver);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});

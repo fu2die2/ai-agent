@@ -5,14 +5,25 @@
  */
 import { Client, extractDatabaseId, isFullDatabase } from "@notionhq/client";
 
+/** 接頭辞なし、または AI_AGENT_NOTION_TOKEN のように接頭辞付きの値を取る。 */
+function envExactOrPrefixed(name: string) {
+  const exact = process.env[name];
+  if (exact) return exact;
+  const suffix = `_${name}`;
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value && key.endsWith(suffix)) return value;
+  }
+  return "";
+}
+
 /** Internal Integration のトークン。NOTION_API_KEY でも可。 */
 function notionToken() {
-  return process.env.NOTION_TOKEN ?? process.env.NOTION_API_KEY ?? "";
+  return envExactOrPrefixed("NOTION_TOKEN") || envExactOrPrefixed("NOTION_API_KEY");
 }
 
 /** 対象データベース ID。URL 貼り付けにも対応。 */
 export function notionDatabaseId() {
-  const raw = process.env.NOTION_DATABASE_ID ?? "";
+  const raw = envExactOrPrefixed("NOTION_DATABASE_ID");
   return extractDatabaseId(raw) ?? raw.trim();
 }
 
@@ -34,7 +45,9 @@ export function notionPageUrl(pageId: string, pageUrl?: string) {
 /** 認証済み Notion SDK クライアント。 */
 export function getNotionClient() {
   if (!hasNotionConfig()) {
-    throw new Error("NOTION_TOKEN と NOTION_DATABASE_ID を .env.local に設定してください");
+    throw new Error(
+      "NOTION_TOKEN と NOTION_DATABASE_ID がありません。ローカルは .env.local、本番は Vercel の Environment Variables に設定してください",
+    );
   }
   return new Client({ auth: notionToken() });
 }
