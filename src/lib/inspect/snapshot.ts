@@ -29,22 +29,23 @@ function flowSteps() {
     { step: "2. Orchestrator", detail: "Gemini が Tool を選ぶ。途中経過は SSE と session.eventLog" },
     { step: "3. searchKnowledge", detail: "Notion → チャンク → embedding。本体は PostgreSQL knowledge_chunks" },
     { step: "4. その他 Tool", detail: "calculate はメモリ上、saveMemo は PostgreSQL memos。createNotionPage / appendNotionPage は Notion DB へ書き込み" },
-    { step: "5. Verifier / 回答", detail: "session.verification と lastAnswer。会話全体は .data/sessions.json" },
+    { step: "5. Verifier / 回答", detail: "session.verification と lastAnswer。会話全体は PostgreSQL chat_sessions" },
   ];
 }
 
 /** 画面と /api/inspect が使う、いまのデータの持ち方。 */
 export async function getInspectSnapshot(): Promise<InspectSnapshot> {
-  const sessions = await listSessions();
+  let sessions: InspectSnapshot["stores"]["sessions"]["items"] = [];
   let memos: InspectSnapshot["stores"]["memos"]["items"] = [];
   let chunks: Awaited<ReturnType<typeof prisma.knowledgeChunk.findMany>> = [];
   try {
+    sessions = await listSessions();
     memos = await listMemos();
     chunks = await prisma.knowledgeChunk.findMany({
       orderBy: [{ documentId: "asc" }, { chunkIndex: "asc" }],
     });
   } catch {
-    // DB が落ちていても会話ファイルのログは見られるようにする
+    // DB が落ちていても画面の骨格は返す
   }
 
   return {
@@ -52,11 +53,11 @@ export async function getInspectSnapshot(): Promise<InspectSnapshot> {
     env: {
       gemini: hasGeminiKey(),
       notion: hasNotionConfig(),
-      database: Boolean(process.env.DATABASE_URL),
+      database: Boolean(process.env.DATABASE_URL_POOLED || process.env.DATABASE_URL),
     },
     stores: {
       sessions: {
-        where: ".data/sessions.json（ファイル）",
+        where: "PostgreSQL / chat_sessions",
         count: sessions.length,
         items: sessions,
       },

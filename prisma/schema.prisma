@@ -10,6 +10,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// チャット履歴。Vercel ではローカルファイルが書けないので Postgres に置く。
+model ChatSession {
+  id        String   @id
+  title     String
+  updatedAt DateTime
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([updatedAt])
+  @@map("chat_sessions")
+}
+
 // エージェントが「メモに保存して」で書く行。saveMemo Tool と /api/memos が使う。
 model Memo {
   id        String   @id @default(cuid())

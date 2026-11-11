@@ -2,7 +2,7 @@
  * エージェント実行まわりの型。
  *
  * 画面（チャット・Execution Trace）と API（SSE イベント）が同じ形を共有する。
- * 会話セッションは .data/sessions.json、メモは PostgreSQL に保存する。
+ * 会話セッションとメモは PostgreSQL に保存する。
  */
 import type { JsonValue, ToolExecution } from "./tool";
 

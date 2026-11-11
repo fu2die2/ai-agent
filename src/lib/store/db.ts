@@ -1,63 +1,75 @@
 /**
  * 会話セッションの保存。
  *
- * メモは PostgreSQL、セッションはまだ .data/sessions.json のファイル保存。
- * サーバー再起動後も履歴サイドバーから会話を開けるようにするため。
+ * Vercel の Functions は .data に書けない（/var/task は読み取り専用）ため、
+ * メモと同じ PostgreSQL に置く。
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { prisma } from "@/lib/prisma";
 import type { SessionRecord, SessionSummary } from "@/types/agent";
+import type { Prisma } from "@prisma/client";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const SESSIONS_PATH = path.join(DATA_DIR, "sessions.json");
-
-type StoreFile<T> = { items: T[] };
-
-/** .data ディレクトリが無ければ作る。 */
-async function ensureDir() {
-  await mkdir(DATA_DIR, { recursive: true });
-}
-
-/** JSON ファイルから items 配列を読む。無い・壊れているときは空。 */
-async function readStore<T>(filePath: string): Promise<T[]> {
-  try {
-    const raw = await readFile(filePath, "utf8");
-    const parsed = JSON.parse(raw) as StoreFile<T>;
-    return parsed.items ?? [];
-  } catch {
-    // ファイルが無い初回は空配列
-    return [];
-  }
-}
-
-/** items 全体を JSON で上書き保存する。 */
-async function writeStore<T>(filePath: string, items: T[]) {
-  await ensureDir();
-  await writeFile(filePath, JSON.stringify({ items }, null, 2), "utf8");
+/** DB の JSON 列を SessionRecord に戻す。 */
+function toSession(row: { id: string; title: string; updatedAt: Date; payload: Prisma.JsonValue }): SessionRecord {
+  const payload = (row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+    ? row.payload
+    : {}) as Omit<SessionRecord, "id" | "title" | "updatedAt">;
+  return {
+    id: row.id,
+    title: row.title,
+    updatedAt: row.updatedAt.getTime(),
+    messages: payload.messages ?? [],
+    traces: payload.traces ?? [],
+    toolExecutions: payload.toolExecutions ?? [],
+    eventLog: payload.eventLog,
+    lastAnswer: payload.lastAnswer,
+    verification: payload.verification,
+  };
 }
 
 /** サイドバー用の会話一覧。新しい順。 */
 export async function listSessions(): Promise<SessionSummary[]> {
-  const sessions = await readStore<SessionRecord>(SESSIONS_PATH);
-  return sessions
-    .map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+  const rows = await prisma.chatSession.findMany({
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true, updatedAt: true },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    updatedAt: row.updatedAt.getTime(),
+  }));
 }
 
 /** 会話 ID で1件取る。履歴クリック時。 */
 export async function getSession(id: string): Promise<SessionRecord | null> {
-  const sessions = await readStore<SessionRecord>(SESSIONS_PATH);
-  return sessions.find((session) => session.id === id) ?? null;
+  const row = await prisma.chatSession.findUnique({ where: { id } });
+  return row ? toSession(row) : null;
 }
 
 /** 会話を追加または上書きする。エージェント完了時に呼ぶ。 */
 export async function saveSession(session: SessionRecord) {
-  const sessions = await readStore<SessionRecord>(SESSIONS_PATH);
-  const index = sessions.findIndex((item) => item.id === session.id);
-  if (index >= 0) {
-    sessions[index] = session;
-  } else {
-    sessions.push(session);
-  }
-  await writeStore(SESSIONS_PATH, sessions);
+  const payload = JSON.parse(
+    JSON.stringify({
+      messages: session.messages,
+      traces: session.traces,
+      toolExecutions: session.toolExecutions,
+      eventLog: session.eventLog ?? [],
+      lastAnswer: session.lastAnswer,
+      verification: session.verification,
+    }),
+  ) as Prisma.InputJsonValue;
+
+  await prisma.chatSession.upsert({
+    where: { id: session.id },
+    create: {
+      id: session.id,
+      title: session.title,
+      updatedAt: new Date(session.updatedAt),
+      payload,
+    },
+    update: {
+      title: session.title,
+      updatedAt: new Date(session.updatedAt),
+      payload,
+    },
+  });
 }
