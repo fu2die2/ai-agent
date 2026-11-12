@@ -9,6 +9,7 @@ import { runAgent } from "@/lib/agent/orchestrator";
 import type { AgentEvent } from "@/types/agent";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 /** message を受け取り、実行中イベントを SSE で流す。 */
 export async function POST(request: Request) {
@@ -40,8 +41,15 @@ export async function POST(request: Request) {
           message,
           emit,
         });
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "エージェント実行に失敗しました";
+        emit({ type: "agent.error", data: { message: messageText } });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // クライアント切断後
+        }
       }
     },
   });

@@ -10,9 +10,14 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const session = await getSession(id);
-  if (!session) {
-    return Response.json({ error: "session not found" }, { status: 404 });
+  try {
+    const session = await getSession(id);
+    if (!session) {
+      return Response.json({ error: "session not found" }, { status: 404 });
+    }
+    return Response.json({ session });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "session の取得に失敗しました";
+    return Response.json({ error: message }, { status: 500 });
   }
-  return Response.json({ session });
 }

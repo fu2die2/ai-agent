@@ -52,11 +52,17 @@ export function AgentStudio() {
   const [summary, setSummary] = useState<AgentRunSummary | null>(null);
   const [verification, setVerification] = useState<VerificationResult | null>(null);
 
-  /** 左の履歴を /api/sessions から取り直す。 */
+  /** 左の履歴を /api/sessions から取り直す。空応答や HTML エラーでは落とさない。 */
   const refreshSessions = useCallback(async () => {
-    const response = await fetch("/api/sessions");
-    const json = (await response.json()) as { sessions: SessionSummary[] };
-    setSessions(json.sessions);
+    try {
+      const response = await fetch("/api/sessions");
+      const text = await response.text();
+      if (!text) return;
+      const json = JSON.parse(text) as { sessions?: SessionSummary[] };
+      setSessions(json.sessions ?? []);
+    } catch {
+      setSessions([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -119,17 +125,43 @@ export function AgentStudio() {
       },
     ]);
 
-    const response = await fetch("/api/agent/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: currentId, message: text }),
-    });
-
-    if (!response.body) {
+    let response: Response;
+    try {
+      response = await fetch("/api/agent/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: currentId, message: text }),
+      });
+    } catch (error) {
       setRunning(false);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `error_${Date.now()}`,
+          role: "assistant",
+          content: `通信エラー: ${error instanceof Error ? error.message : "network error"}`,
+          createdAt: Date.now(),
+        },
+      ]);
       return;
     }
 
+    if (!response.ok || !response.body) {
+      setRunning(false);
+      const detail = await response.text().catch(() => "");
+      setMessages((current) => [
+        ...current,
+        {
+          id: `error_${Date.now()}`,
+          role: "assistant",
+          content: `エラー: エージェントに接続できませんでした${detail ? ` (${detail.slice(0, 200)})` : ""}`,
+          createdAt: Date.now(),
+        },
+      ]);
+      return;
+    }
+
+    try {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -264,6 +296,18 @@ export function AgentStudio() {
     }
     setRunning(false);
     await refreshSessions();
+    } catch (error) {
+      setRunning(false);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `error_${Date.now()}`,
+          role: "assistant",
+          content: `エラー: ${error instanceof Error ? error.message : "network error"}`,
+          createdAt: Date.now(),
+        },
+      ]);
+    }
   };
 
   return (

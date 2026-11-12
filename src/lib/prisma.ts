@@ -1,9 +1,8 @@
 /**
  * Prisma クライアントの単一インスタンス。
  *
- * Next.js の dev ではモジュールがホットリロードされるため、
- * globalThis に載せて接続が増えすぎないようにしている。
- * クライアントは最初のクエリまで作らない（ビルド時に URL が無くても落ちない）。
+ * Proxy は使わない。Next のバンドルでは Proxy 経由だと
+ * chatSession が undefined になり findMany で落ちる。
  */
 import { PrismaClient } from "@prisma/client";
 import { resolveDatabaseUrl } from "@/lib/db-url";
@@ -13,14 +12,9 @@ const globalForPrisma = globalThis as unknown as {
   prismaUrl?: string;
 };
 
-/** 実行時の接続文字列。 */
-function databaseUrl() {
-  return resolveDatabaseUrl();
-}
-
 /** PostgreSQL 向け PrismaClient を作る。SQLite の URL は拒否する。 */
 function createPrismaClient() {
-  const connectionString = databaseUrl();
+  const connectionString = resolveDatabaseUrl();
   if (!connectionString) {
     throw new Error("DATABASE_URL が設定されていません");
   }
@@ -36,22 +30,14 @@ function createPrismaClient() {
   });
 }
 
-/** 同じ URL なら使い回し、無ければ作る。 */
-function getPrisma() {
-  const connectionString = databaseUrl();
-  if (globalForPrisma.prisma && globalForPrisma.prismaUrl === connectionString) {
-    return globalForPrisma.prisma;
-  }
-  const client = createPrismaClient();
-  globalForPrisma.prisma = client;
-  globalForPrisma.prismaUrl = connectionString;
-  return client;
-}
+const connectionString = resolveDatabaseUrl();
+const cached = globalForPrisma.prisma;
+const cacheOk =
+  cached &&
+  globalForPrisma.prismaUrl === connectionString &&
+  typeof cached.chatSession?.findMany === "function";
 
-export const prisma = new Proxy({} as PrismaClient, {
-  get(_target, property, receiver) {
-    const client = getPrisma();
-    const value = Reflect.get(client, property, receiver);
-    return typeof value === "function" ? value.bind(client) : value;
-  },
-});
+export const prisma = cacheOk ? cached : createPrismaClient();
+
+globalForPrisma.prisma = prisma;
+globalForPrisma.prismaUrl = connectionString;
