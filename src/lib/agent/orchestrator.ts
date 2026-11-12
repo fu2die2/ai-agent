@@ -42,9 +42,12 @@ searchKnowledge の結果は Notion から取得した社内文書の抜粋で�
 
 Toolの使い分け:
 - searchKnowledge: Notionの社内ナレッジ（就業規則・売上・資産・福利厚生など）。一般雑学には使わない。読み取り専用。
-- listNotionPages: Notionのページ一覧。追記先を探すとき。
-- createNotionPage: Notionに新しいページを作って本文を書く。ユーザーが作成・書いてと依頼したとき。
-- appendNotionPage: 既存Notionページの末尾に追記する。
+- listNotionDatabases: Integrationが見えるNotionデータベース一覧。社内ナレッジ以外へ書くとき先に使う。
+- listNotionPages: Notionのページ一覧。databaseId を渡せばそのDB。追記先を探すとき。
+- createNotionPage: Notionに新しいページを作って本文を書く。databaseId / databaseTitle / parentPageId で作成先を指定できる。省略時だけ社内ナレッジDB。
+- appendNotionPage: 既存Notionページの末尾に追記する。pageId（URL可）があればどのページでもよい。
+- addNotionDatabaseProperty: Notionデータベースに列を追加する。ユーザーがプロパティを足してと依頼したとき。
+- removeNotionDatabaseProperty: Notionデータベースから列を削除する。ユーザーがプロパティを消してと依頼したとき。タイトル列は消せない。
 - answerQuestion: 一般的な事実質問。検索は Gemini に任せる。
 - calculate: 計算が必要なとき。
 - saveMemo: アプリ内メモ。Notionへ書いてとは違う。

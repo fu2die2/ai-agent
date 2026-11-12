@@ -27,7 +27,12 @@ export function notionDatabaseId() {
   return extractDatabaseId(raw) ?? raw.trim();
 }
 
-/** トークンと DB ID の両方が揃っているか。 */
+/** 書き込みに必要なトークンがあるか。 */
+export function hasNotionToken() {
+  return Boolean(notionToken());
+}
+
+/** 社内ナレッジ検索に必要なトークンと DB ID が揃っているか。 */
 export function hasNotionConfig() {
   return Boolean(notionToken() && notionDatabaseId());
 }
@@ -42,20 +47,23 @@ export function notionPageUrl(pageId: string, pageUrl?: string) {
   return compact ? `https://www.notion.so/${compact}` : "";
 }
 
-/** 認証済み Notion SDK クライアント。 */
+/** 認証済み Notion SDK クライアント。書き込みはトークンだけあればよい。 */
 export function getNotionClient() {
-  if (!hasNotionConfig()) {
+  if (!hasNotionToken()) {
     throw new Error(
-      "NOTION_TOKEN と NOTION_DATABASE_ID がありません。ローカルは .env.local、本番は Vercel の Environment Variables に設定してください",
+      "NOTION_TOKEN がありません。ローカルは .env.local、本番は Vercel の Environment Variables に設定してください",
     );
   }
   return new Client({ auth: notionToken() });
 }
 
-/** データベース ID から、行一覧に使う data_source_id を1つ取る。 */
-export async function resolveDataSourceId(client: Client) {
-  const databaseId = notionDatabaseId();
-  const database = await client.databases.retrieve({ database_id: databaseId });
+/** データベース ID から、行一覧・作成に使う data_source_id を1つ取る。 */
+export async function resolveDataSourceId(client: Client, databaseId = notionDatabaseId()) {
+  const id = extractDatabaseId(databaseId) ?? databaseId.trim();
+  if (!id) {
+    throw new Error("データベース ID が空です");
+  }
+  const database = await client.databases.retrieve({ database_id: id });
   if (!isFullDatabase(database) || database.data_sources.length === 0) {
     throw new Error("Notionデータベースにデータソースがありません");
   }

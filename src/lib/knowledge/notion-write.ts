@@ -1,11 +1,12 @@
 /**
  * Notion への書き込み。
- * 対象は .env の NOTION_DATABASE_ID が指すデータベース（社内ナレッジと同じ）。
+ * 社内ナレッジ DB 以外にも、Integration がアクセスできる DB・親ページへ作れる。
  *
  * 作成は pages.create、追記は blocks.children.append。
  * 本文は Markdown を見出し・箇条書き・段落のブロックに落とす。
  */
 import {
+  extractDatabaseId,
   extractPageId,
   isFullDataSource,
   isFullPage,
@@ -15,6 +16,7 @@ import {
 } from "@notionhq/client";
 import {
   getNotionClient,
+  notionDatabaseId,
   notionPageUrl,
   resolveDataSourceId,
 } from "./notion-client";
@@ -26,6 +28,14 @@ export type NotionPageSummary = {
   id: string;
   title: string;
   url: string;
+};
+
+export type NotionDatabaseSummary = {
+  id: string;
+  dataSourceId: string;
+  title: string;
+  url: string;
+  properties: { name: string; type: string }[];
 };
 
 /** URL やハイフン無し ID を Notion の page_id に揃える。 */
@@ -95,15 +105,71 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
   return blocks;
 }
 
-/** データソースのスキーマ。タイトル列名と任意プロパティの型を知る。 */
-async function loadDataSource() {
+/** data_source の表示名。 */
+function dataSourceTitle(dataSource: DataSourceObjectResponse) {
+  const text = dataSource.title.map((item) => item.plain_text).join("").trim();
+  return text || "無題のデータベース";
+}
+
+/** データソースのスキーマ。databaseId が空なら社内ナレッジ DB。 */
+async function loadDataSource(databaseId?: string) {
   const client = getNotionClient();
-  const dataSourceId = await resolveDataSourceId(client);
+  const raw = (databaseId || notionDatabaseId()).trim();
+  const compact = extractDatabaseId(raw) ?? raw;
+  try {
+    const byDataSource = await client.dataSources.retrieve({ data_source_id: compact });
+    if (isFullDataSource(byDataSource)) {
+      return { client, dataSource: byDataSource };
+    }
+  } catch {
+    // データベース ID の可能性があるので retrieve に進む
+  }
+  const dataSourceId = await resolveDataSourceId(client, compact);
   const dataSource = await client.dataSources.retrieve({ data_source_id: dataSourceId });
   if (!isFullDataSource(dataSource)) {
     throw new Error("Notionデータソースを取得できませんでした");
   }
   return { client, dataSource };
+}
+
+/** Integration が見えるデータベースを search で列挙する。 */
+export async function listNotionDatabases(query?: string): Promise<NotionDatabaseSummary[]> {
+  const client = getNotionClient();
+  const needle = query?.trim();
+  const items: NotionDatabaseSummary[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const response = await client.search({
+      query: needle || undefined,
+      filter: { property: "object", value: "data_source" },
+      start_cursor: cursor,
+      page_size: 100,
+    });
+    for (const result of response.results) {
+      if (!isFullDataSource(result) || result.in_trash) continue;
+      items.push({
+        id: result.id,
+        dataSourceId: result.id,
+        title: dataSourceTitle(result),
+        url: result.url,
+        properties: Object.entries(result.properties).map(([name, property]) => ({
+          name,
+          type: property.type,
+        })),
+      });
+    }
+    cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
+  } while (cursor);
+
+  return items;
+}
+
+/** 名前の完全一致を優先し、無ければ部分一致の先頭。 */
+async function findDatabaseByTitle(title: string) {
+  const databases = await listNotionDatabases(title);
+  const exact = databases.find((item) => item.title === title);
+  return exact ?? databases[0] ?? null;
 }
 
 /** title 型のプロパティ名。無いデータベースは作れない。 */
@@ -186,8 +252,8 @@ function asSummary(page: PageObjectResponse): NotionPageSummary {
 }
 
 /** 対象 DB のページを新しい順で一覧する。query があればタイトル部分一致。 */
-export async function listNotionPages(query?: string): Promise<NotionPageSummary[]> {
-  const { client, dataSource } = await loadDataSource();
+export async function listNotionPages(query?: string, databaseId?: string): Promise<NotionPageSummary[]> {
+  const { client, dataSource } = await loadDataSource(databaseId);
   const titleName = titlePropertyName(dataSource);
   const needle = query?.trim();
   const pages: NotionPageSummary[] = [];
@@ -219,25 +285,52 @@ export async function listNotionPages(query?: string): Promise<NotionPageSummary
 }
 
 /** タイトル完全一致を優先し、無ければ部分一致の先頭を返す。 */
-export async function findNotionPageByTitle(title: string) {
-  const pages = await listNotionPages(title);
+export async function findNotionPageByTitle(title: string, databaseId?: string) {
+  const pages = await listNotionPages(title, databaseId);
   const exact = pages.find((page) => page.title === title);
   return exact ?? pages[0] ?? null;
 }
 
-/** 社内ナレッジ DB にページを1件作り、本文を書く。 */
+/** 親ページの下、または指定 DB（省略時は社内ナレッジ）にページを1件作る。 */
 export async function createNotionPage(input: {
   title: string;
   content: string;
   category?: string;
   keywords?: string;
+  parentPageId?: string;
+  databaseId?: string;
+  databaseTitle?: string;
 }): Promise<NotionPageSummary> {
   const title = input.title.trim();
   const content = input.content.trim();
   if (!title) throw new Error("title は必須です");
   if (!content) throw new Error("content は必須です");
 
-  const { client, dataSource } = await loadDataSource();
+  const client = getNotionClient();
+  const parentPageId = input.parentPageId?.trim() ? normalizePageId(input.parentPageId) : "";
+
+  if (parentPageId) {
+    const created = await client.pages.create({
+      parent: { page_id: parentPageId },
+      properties: {
+        title: { title: richText(title.slice(0, MAX_RICH_TEXT)) },
+      },
+      children: markdownToBlocks(content),
+    });
+    if (!isFullPage(created)) throw new Error("ページ作成の応答が不完全です");
+    return asSummary(created);
+  }
+
+  let databaseId = input.databaseId?.trim()
+    ? (extractDatabaseId(input.databaseId) ?? input.databaseId.trim())
+    : "";
+  if (!databaseId && input.databaseTitle?.trim()) {
+    const found = await findDatabaseByTitle(input.databaseTitle.trim());
+    if (!found) throw new Error(`データベースが見つかりません: ${input.databaseTitle}`);
+    databaseId = found.id;
+  }
+
+  const { dataSource } = await loadDataSource(databaseId || undefined);
   const titleName = titlePropertyName(dataSource);
   const properties = {
     [titleName]: { title: richText(title.slice(0, MAX_RICH_TEXT)) },
@@ -258,13 +351,14 @@ export async function appendNotionPage(input: {
   content: string;
   pageId?: string;
   title?: string;
+  databaseId?: string;
 }): Promise<NotionPageSummary> {
   const content = input.content.trim();
   if (!content) throw new Error("content は必須です");
 
   let pageId = input.pageId?.trim() ? normalizePageId(input.pageId) : "";
   if (!pageId && input.title?.trim()) {
-    const found = await findNotionPageByTitle(input.title.trim());
+    const found = await findNotionPageByTitle(input.title.trim(), input.databaseId);
     if (!found) throw new Error(`タイトルに一致するページがありません: ${input.title}`);
     pageId = found.id;
   }
@@ -278,4 +372,172 @@ export async function appendNotionPage(input: {
   const page = await client.pages.retrieve({ page_id: pageId });
   if (!isFullPage(page)) throw new Error("追記先のページを取得できませんでした");
   return asSummary(page);
+}
+
+const PROPERTY_TYPES = [
+  "rich_text",
+  "number",
+  "select",
+  "multi_select",
+  "url",
+  "checkbox",
+  "date",
+] as const;
+
+type PropertyType = (typeof PROPERTY_TYPES)[number];
+
+/** 日本語の型名を Notion の type に揃える。 */
+function normalizePropertyType(raw: string): PropertyType {
+  const value = raw.trim().toLowerCase();
+  const aliases: Record<string, PropertyType> = {
+    text: "rich_text",
+    テキスト: "rich_text",
+    文章: "rich_text",
+    rich_text: "rich_text",
+    number: "number",
+    数値: "number",
+    select: "select",
+    セレクト: "select",
+    選択: "select",
+    multi_select: "multi_select",
+    マルチセレクト: "multi_select",
+    タグ: "multi_select",
+    url: "url",
+    リンク: "url",
+    checkbox: "checkbox",
+    チェック: "checkbox",
+    date: "date",
+    日付: "date",
+  };
+  const type = aliases[value];
+  if (!type) {
+    throw new Error(`未対応のプロパティ型です: ${raw}（rich_text / number / select / multi_select / url / checkbox / date）`);
+  }
+  return type;
+}
+
+/** select / multi_select の選択肢。カンマ区切り。 */
+function selectOptions(raw?: string) {
+  return (raw ?? "")
+    .split(/[,、]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((name) => ({ name }));
+}
+
+/** Notion の properties 更新用オブジェクトを型ごとに作る。 */
+function propertyConfig(type: PropertyType, options?: string) {
+  switch (type) {
+    case "rich_text":
+      return { type: "rich_text" as const, rich_text: {} };
+    case "number":
+      return { type: "number" as const, number: {} };
+    case "select":
+      return { type: "select" as const, select: { options: selectOptions(options) } };
+    case "multi_select":
+      return { type: "multi_select" as const, multi_select: { options: selectOptions(options) } };
+    case "url":
+      return { type: "url" as const, url: {} };
+    case "checkbox":
+      return { type: "checkbox" as const, checkbox: {} };
+    case "date":
+      return { type: "date" as const, date: {} };
+  }
+}
+
+/** データベースに列（プロパティ）を1つ追加する。同名があれば作らず既存を返す。 */
+export async function addNotionDatabaseProperty(input: {
+  name: string;
+  type: string;
+  options?: string;
+  databaseId?: string;
+  databaseTitle?: string;
+}) {
+  const name = input.name.trim();
+  if (!name) throw new Error("name は必須です");
+  const type = normalizePropertyType(input.type);
+
+  let databaseId = input.databaseId?.trim() ?? "";
+  if (!databaseId && input.databaseTitle?.trim()) {
+    const found = await findDatabaseByTitle(input.databaseTitle.trim());
+    if (!found) throw new Error(`データベースが見つかりません: ${input.databaseTitle}`);
+    databaseId = found.id;
+  }
+
+  const { client, dataSource } = await loadDataSource(databaseId || undefined);
+  const existing = dataSource.properties[name];
+  if (existing) {
+    return {
+      added: false,
+      existed: true,
+      name,
+      type: existing.type,
+      databaseTitle: dataSourceTitle(dataSource),
+      url: dataSource.url,
+    };
+  }
+
+  const updated = await client.dataSources.update({
+    data_source_id: dataSource.id,
+    properties: {
+      [name]: propertyConfig(type, input.options),
+    },
+  });
+  if (!isFullDataSource(updated)) {
+    throw new Error("プロパティ追加の応答が不完全です");
+  }
+  return {
+    added: true,
+    existed: false,
+    name,
+    type,
+    databaseTitle: dataSourceTitle(updated),
+    url: updated.url,
+  };
+}
+
+/** データベースから列（プロパティ）を1つ削除する。タイトル列は消せない。 */
+export async function removeNotionDatabaseProperty(input: {
+  name: string;
+  databaseId?: string;
+  databaseTitle?: string;
+}) {
+  const name = input.name.trim();
+  if (!name) throw new Error("name は必須です");
+
+  let databaseId = input.databaseId?.trim() ?? "";
+  if (!databaseId && input.databaseTitle?.trim()) {
+    const found = await findDatabaseByTitle(input.databaseTitle.trim());
+    if (!found) throw new Error(`データベースが見つかりません: ${input.databaseTitle}`);
+    databaseId = found.id;
+  }
+
+  const { client, dataSource } = await loadDataSource(databaseId || undefined);
+  const found = findSchemaProperty(dataSource, [name]);
+  if (!found) {
+    const names = Object.keys(dataSource.properties).join("、");
+    throw new Error(`プロパティが見つかりません: ${name}（既存: ${names}）`);
+  }
+
+  const [propertyName, property] = found;
+  if (property.type === "title") {
+    throw new Error("タイトル列は削除できません");
+  }
+
+  const updated = await client.dataSources.update({
+    data_source_id: dataSource.id,
+    properties: {
+      [propertyName]: null,
+    },
+  });
+  if (!isFullDataSource(updated)) {
+    throw new Error("プロパティ削除の応答が不完全です");
+  }
+  return {
+    removed: true,
+    name: propertyName,
+    type: property.type,
+    databaseTitle: dataSourceTitle(updated),
+    url: updated.url,
+  };
 }

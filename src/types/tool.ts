@@ -11,8 +11,11 @@ export type ToolName =
   | "calculate"
   | "saveMemo"
   | "listNotionPages"
+  | "listNotionDatabases"
   | "createNotionPage"
-  | "appendNotionPage";
+  | "appendNotionPage"
+  | "addNotionDatabaseProperty"
+  | "removeNotionDatabaseProperty";
 
 export type ToolStatus = "pending" | "running" | "success" | "error";
 

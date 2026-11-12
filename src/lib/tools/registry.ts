@@ -9,9 +9,12 @@ import { answerQuestion } from "./answerQuestion";
 import { calculate } from "./calculator";
 import { saveMemoTool } from "./memo";
 import {
+  addNotionDatabasePropertyTool,
   appendNotionPageTool,
   createNotionPageTool,
+  listNotionDatabasesTool,
   listNotionPagesTool,
+  removeNotionDatabasePropertyTool,
 } from "./notionPages";
 import { searchKnowledge } from "./search";
 import type { JsonValue, ToolDefinition, ToolHandler, ToolName } from "@/types/tool";
@@ -76,11 +79,24 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "listNotionPages",
     description:
-      "社内ナレッジのNotionデータベース内のページ一覧。追記前に対象を探すとき使う。query はタイトルの部分一致。",
+      "指定したNotionデータベース内のページ一覧。databaseId を省略すると社内ナレッジ DB。追記前に対象を探すとき使う。",
     parameters: {
       type: "object",
       properties: {
         query: { type: "string", description: "タイトルで絞る語。空なら全件" },
+        databaseId: { type: "string", description: "データベース ID または URL。省略時は社内ナレッジ" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "listNotionDatabases",
+    description:
+      "Integration がアクセスできる Notion データベースの一覧。作成先を社内ナレッジ以外にするとき先に呼ぶ。",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "データベース名で絞る語" },
       },
       required: [],
     },
@@ -88,7 +104,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "createNotionPage",
     description:
-      "社内ナレッジのNotionデータベースに新しいページを作り、本文を書く。ユーザーがページ作成・Notionへ書いてと依頼したとき使う。",
+      "Notionに新しいページを作り本文を書く。databaseId / databaseTitle で任意のDB、parentPageId で任意の親ページの子として作れる。どちらも無いときは社内ナレッジ DB。",
     parameters: {
       type: "object",
       properties: {
@@ -96,6 +112,9 @@ export const toolDefinitions: ToolDefinition[] = [
         content: { type: "string", description: "本文。Markdown可（見出し・箇条書き・段落）" },
         category: { type: "string", description: "カテゴリ列があれば設定。例: 総務" },
         keywords: { type: "string", description: "キーワード。カンマ区切り" },
+        databaseId: { type: "string", description: "作成先データベースの ID または URL" },
+        databaseTitle: { type: "string", description: "作成先データベースの名前。IDが無いとき" },
+        parentPageId: { type: "string", description: "親ページの ID または URL。指定するとその子ページになる" },
       },
       required: ["title", "content"],
     },
@@ -114,6 +133,36 @@ export const toolDefinitions: ToolDefinition[] = [
       required: ["content"],
     },
   },
+  {
+    name: "addNotionDatabaseProperty",
+    description:
+      "Notionデータベースに列（プロパティ）を追加する。type は rich_text / number / select / multi_select / url / checkbox / date。select は options にカンマ区切り。",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "列名。例: 担当部署" },
+        type: { type: "string", description: "列の型。例: select" },
+        options: { type: "string", description: "select / multi_select の選択肢。カンマ区切り" },
+        databaseId: { type: "string", description: "対象DBの ID または URL。省略時は社内ナレッジ" },
+        databaseTitle: { type: "string", description: "対象DBの名前" },
+      },
+      required: ["name", "type"],
+    },
+  },
+  {
+    name: "removeNotionDatabaseProperty",
+    description:
+      "Notionデータベースから列（プロパティ）を削除する。タイトル列は削除できない。ユーザーが列を消してと依頼したときだけ使う。",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "削除する列名。例: 担当部署" },
+        databaseId: { type: "string", description: "対象DBの ID または URL。省略時は社内ナレッジ" },
+        databaseTitle: { type: "string", description: "対象DBの名前" },
+      },
+      required: ["name"],
+    },
+  },
 ];
 
 const handlers: Record<ToolName, ToolHandler> = {
@@ -122,8 +171,11 @@ const handlers: Record<ToolName, ToolHandler> = {
   calculate,
   saveMemo: saveMemoTool,
   listNotionPages: listNotionPagesTool,
+  listNotionDatabases: listNotionDatabasesTool,
   createNotionPage: createNotionPageTool,
   appendNotionPage: appendNotionPageTool,
+  addNotionDatabaseProperty: addNotionDatabasePropertyTool,
+  removeNotionDatabaseProperty: removeNotionDatabasePropertyTool,
 };
 
 /** 定義一覧。/api/tools がこれをそのまま返す。 */
