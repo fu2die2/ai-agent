@@ -67,6 +67,7 @@ function toSession(row: { id: string; title: string; updatedAt: Date; payload: P
     traces: payload.traces ?? [],
     toolExecutions: payload.toolExecutions ?? [],
     eventLog: payload.eventLog,
+    ioLogs: payload.ioLogs,
     lastAnswer: payload.lastAnswer,
     verification: payload.verification,
   };
@@ -103,6 +104,7 @@ export async function saveSession(session: SessionRecord) {
       traces: session.traces,
       toolExecutions: session.toolExecutions,
       eventLog: session.eventLog ?? [],
+      ioLogs: session.ioLogs ?? [],
       lastAnswer: session.lastAnswer,
       verification: session.verification,
     }),

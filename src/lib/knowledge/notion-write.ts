@@ -3,7 +3,7 @@
  * 社内ナレッジ DB 以外にも、Integration がアクセスできる DB・親ページへ作れる。
  *
  * 作成は pages.create、追記は blocks.children.append。
- * 本文は Markdown を見出し・箇条書き・段落のブロックに落とす。
+ * 本文は Markdown を見出し・箇条書き・段落・コードブロックに落とす。
  */
 import {
   extractDatabaseId,
@@ -21,7 +21,8 @@ import {
   resolveDataSourceId,
 } from "./notion-client";
 
-const MAX_BLOCKS = 100;
+const MAX_BLOCKS = 400;
+const BLOCK_BATCH = 100;
 const MAX_RICH_TEXT = 1900;
 
 export type NotionPageSummary = {
@@ -49,14 +50,141 @@ export function normalizePageId(raw: string) {
 function richText(content: string): Array<{ type: "text"; text: { content: string } }> {
   const text = content.slice(0, MAX_RICH_TEXT * 2);
   if (!text) return [{ type: "text", text: { content: "" } }];
+  return richTextChunks(text);
+}
+
+/** 文字数制限だけ分割する。コードブロックは長めでも切らずに載せる。 */
+function richTextChunks(content: string): Array<{ type: "text"; text: { content: string } }> {
+  if (!content) return [{ type: "text", text: { content: "" } }];
   const parts: Array<{ type: "text"; text: { content: string } }> = [];
-  for (let i = 0; i < text.length; i += MAX_RICH_TEXT) {
-    parts.push({ type: "text", text: { content: text.slice(i, i + MAX_RICH_TEXT) } });
+  for (let i = 0; i < content.length; i += MAX_RICH_TEXT) {
+    parts.push({ type: "text", text: { content: content.slice(i, i + MAX_RICH_TEXT) } });
   }
   return parts;
 }
 
-/** Markdown を Notion ブロック列にする。表や画像は段落として残す。 */
+const NOTION_CODE_LANGUAGES = new Set([
+  "abap",
+  "abc",
+  "agda",
+  "arduino",
+  "ascii art",
+  "assembly",
+  "bash",
+  "basic",
+  "bnf",
+  "c",
+  "c#",
+  "c++",
+  "clojure",
+  "coffeescript",
+  "coq",
+  "css",
+  "dart",
+  "dhall",
+  "diff",
+  "docker",
+  "ebnf",
+  "elixir",
+  "elm",
+  "erlang",
+  "f#",
+  "flow",
+  "fortran",
+  "gherkin",
+  "glsl",
+  "go",
+  "graphql",
+  "groovy",
+  "haskell",
+  "hcl",
+  "html",
+  "idris",
+  "java",
+  "javascript",
+  "json",
+  "julia",
+  "kotlin",
+  "latex",
+  "less",
+  "lisp",
+  "livescript",
+  "llvm ir",
+  "lua",
+  "makefile",
+  "markdown",
+  "markup",
+  "matlab",
+  "mathematica",
+  "mermaid",
+  "nix",
+  "notion formula",
+  "objective-c",
+  "ocaml",
+  "pascal",
+  "perl",
+  "php",
+  "plain text",
+  "powershell",
+  "prolog",
+  "protobuf",
+  "purescript",
+  "python",
+  "r",
+  "racket",
+  "reason",
+  "ruby",
+  "rust",
+  "sass",
+  "scala",
+  "scheme",
+  "scss",
+  "shell",
+  "smalltalk",
+  "solidity",
+  "sql",
+  "swift",
+  "toml",
+  "typescript",
+  "vb.net",
+  "verilog",
+  "vhdl",
+  "visual basic",
+  "webassembly",
+  "xml",
+  "yaml",
+  "java/c/c++/c#",
+]);
+
+const CODE_LANGUAGE_ALIASES: Record<string, string> = {
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  node: "javascript",
+  py: "python",
+  sh: "shell",
+  zsh: "shell",
+  bash: "bash",
+  yml: "yaml",
+  md: "markdown",
+  txt: "plain text",
+  text: "plain text",
+  plaintext: "plain text",
+  env: "shell",
+  dotenv: "shell",
+};
+
+/** Markdown の言語名を Notion の code.language に合わせる。 */
+function notionCodeLanguage(raw: string) {
+  const value = raw.trim().toLowerCase();
+  if (!value) return "plain text" as const;
+  const mapped = CODE_LANGUAGE_ALIASES[value] ?? value;
+  if (NOTION_CODE_LANGUAGES.has(mapped)) return mapped;
+  return "plain text" as const;
+}
+
+/** Markdown を Notion ブロック列にする。コードフェンスは code ブロックにする。 */
 export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const blocks: BlockObjectRequest[] = [];
@@ -66,9 +194,39 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
     if (blocks.length < MAX_BLOCKS) blocks.push(block);
   };
 
+  let fence: { language: string; body: string[] } | null = null;
+
+  /** 溜めたフェンスを Notion の code にする。 */
+  const flushCode = () => {
+    if (!fence) return;
+    push({
+      code: {
+        rich_text: richTextChunks(fence.body.join("\n") || " "),
+        language: notionCodeLanguage(fence.language) as "plain text",
+      },
+    });
+    fence = null;
+  };
+
   for (const raw of lines) {
     const line = raw.trimEnd();
     const trimmed = line.trim();
+    const fenceOpen = trimmed.match(/^```+\s*([a-zA-Z0-9/+#._-]*)\s*$/);
+
+    if (fence) {
+      if (fenceOpen && !fenceOpen[1]) {
+        flushCode();
+        continue;
+      }
+      fence.body.push(raw.replace(/\n$/, ""));
+      continue;
+    }
+
+    if (fenceOpen) {
+      fence = { language: fenceOpen[1] ?? "", body: [] };
+      continue;
+    }
+
     if (!trimmed) continue;
 
     if (trimmed.startsWith("### ")) {
@@ -99,10 +257,26 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
     push({ paragraph: { rich_text: richText(trimmed) } });
   }
 
+  flushCode();
+
   if (blocks.length === 0) {
     push({ paragraph: { rich_text: richText(markdown.trim() || " ") } });
   }
   return blocks;
+}
+
+/** Notion は1回 100 ブロックまでなので分割して append する。 */
+async function appendBlockBatches(
+  client: ReturnType<typeof getNotionClient>,
+  blockId: string,
+  blocks: BlockObjectRequest[],
+) {
+  for (let i = 0; i < blocks.length; i += BLOCK_BATCH) {
+    await client.blocks.children.append({
+      block_id: blockId,
+      children: blocks.slice(i, i + BLOCK_BATCH),
+    });
+  }
 }
 
 /** data_source の表示名。 */
@@ -200,7 +374,7 @@ function extraProperties(
 ) {
   const properties: Record<string, unknown> = {};
   if (input.category?.trim()) {
-    const found = findSchemaProperty(dataSource, ["カテゴリ", "category"]);
+    const found = findSchemaProperty(dataSource, ["カテゴリ", "ジャンル", "category", "genre"]);
     if (found) {
       const [name, config] = found;
       const value = input.category.trim();
@@ -310,14 +484,18 @@ export async function createNotionPage(input: {
   const parentPageId = input.parentPageId?.trim() ? normalizePageId(input.parentPageId) : "";
 
   if (parentPageId) {
+    const blocks = markdownToBlocks(content);
     const created = await client.pages.create({
       parent: { page_id: parentPageId },
       properties: {
         title: { title: richText(title.slice(0, MAX_RICH_TEXT)) },
       },
-      children: markdownToBlocks(content),
+      children: blocks.slice(0, BLOCK_BATCH),
     });
     if (!isFullPage(created)) throw new Error("ページ作成の応答が不完全です");
+    if (blocks.length > BLOCK_BATCH) {
+      await appendBlockBatches(client, created.id, blocks.slice(BLOCK_BATCH));
+    }
     return asSummary(created);
   }
 
@@ -337,12 +515,16 @@ export async function createNotionPage(input: {
     ...extraProperties(dataSource, input),
   };
 
+  const blocks = markdownToBlocks(content);
   const created = await client.pages.create({
     parent: { data_source_id: dataSource.id },
     properties: properties as Parameters<typeof client.pages.create>[0]["properties"],
-    children: markdownToBlocks(content),
+    children: blocks.slice(0, BLOCK_BATCH),
   });
   if (!isFullPage(created)) throw new Error("ページ作成の応答が不完全です");
+  if (blocks.length > BLOCK_BATCH) {
+    await appendBlockBatches(client, created.id, blocks.slice(BLOCK_BATCH));
+  }
   return asSummary(created);
 }
 
@@ -365,10 +547,7 @@ export async function appendNotionPage(input: {
   if (!pageId) throw new Error("pageId または title が必要です");
 
   const client = getNotionClient();
-  await client.blocks.children.append({
-    block_id: pageId,
-    children: markdownToBlocks(content),
-  });
+  await appendBlockBatches(client, pageId, markdownToBlocks(content));
   const page = await client.pages.retrieve({ page_id: pageId });
   if (!isFullPage(page)) throw new Error("追記先のページを取得できませんでした");
   return asSummary(page);

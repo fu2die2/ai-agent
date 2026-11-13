@@ -18,7 +18,7 @@ export function JsonBlock({ value, label }: { value: unknown; label?: string }) 
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <p className="text-[11px] tracking-wide text-slate-400 uppercase">
           {label ?? "JSON"}
@@ -31,7 +31,7 @@ export function JsonBlock({ value, label }: { value: unknown; label?: string }) 
           {copied ? "コピーしました" : "コピー"}
         </button>
       </div>
-      <pre className="max-h-[28rem] overflow-auto p-3 text-[11px] leading-5 text-slate-100">
+      <pre className="max-h-[28rem] overflow-x-scroll overflow-y-auto p-3 text-[11px] leading-5 whitespace-pre text-slate-100">
         {text}
       </pre>
     </div>

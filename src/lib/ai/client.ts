@@ -217,9 +217,71 @@ export async function generateJson(prompt: string, systemInstruction: string) {
   });
 }
 
+/** Gemini 3 の functionCall に付く思考署名。part か functionCall のどちらに来ても拾う。 */
+type ThoughtfulPart = Content["parts"][number] & {
+  thoughtSignature?: string;
+  thought_signature?: string;
+  thought?: boolean;
+  functionCall?: { name: string; args: object; thoughtSignature?: string; thought_signature?: string };
+};
+
+const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
+
+/** part から thought_signature を取る。 */
+function thoughtSignatureOf(part: ThoughtfulPart): string | undefined {
+  if (typeof part.thoughtSignature === "string" && part.thoughtSignature) {
+    return part.thoughtSignature;
+  }
+  if (typeof part.thought_signature === "string" && part.thought_signature) {
+    return part.thought_signature;
+  }
+  const call = part.functionCall;
+  if (call && typeof call.thoughtSignature === "string" && call.thoughtSignature) {
+    return call.thoughtSignature;
+  }
+  if (call && typeof call.thought_signature === "string" && call.thought_signature) {
+    return call.thought_signature;
+  }
+  return undefined;
+}
+
+/**
+ * 次の generateContent にそのまま返せる model content にする。
+ * Gemini 3 は各ステップ先頭の functionCall に thought_signature が無いと 400 になる。
+ * 並列呼び出しは先頭だけ署名があればよい。無いときだけ skip を付ける。
+ */
+export function preserveModelContent(
+  content: Content | undefined,
+  fallbackCalls: Array<{ name: string; args: object }>,
+): Content {
+  const parts: ThoughtfulPart[] = content?.parts?.length
+    ? (content.parts.map((part) => ({ ...part })) as ThoughtfulPart[])
+    : fallbackCalls.map((call) => ({ functionCall: call }));
+
+  let carry: string | undefined;
+  let signedFirstCall = false;
+  for (const part of parts) {
+    const signature = thoughtSignatureOf(part);
+    if (signature) carry = signature;
+    if (!part.functionCall) continue;
+    const assigned = thoughtSignatureOf(part) || (!signedFirstCall ? carry ?? SKIP_THOUGHT_SIGNATURE : undefined);
+    if (assigned) {
+      part.thoughtSignature = assigned;
+      part.thought_signature = assigned;
+    }
+    signedFirstCall = true;
+  }
+
+  return {
+    role: content?.role || "model",
+    parts,
+  };
+}
+
 /**
  * 1ターン分。テキスト回答か functionCall の配列が返る。
  * functionCall があるときは text を使わず、Tool 実行後に会話へ戻す。
+ * 返した modelContent は thought_signature 付きのまま次ターンへ渡す。
  */
 export async function generateAgentTurn(options: {
   systemInstruction: string;
@@ -233,13 +295,14 @@ export async function generateAgentTurn(options: {
     });
     const result = await model.generateContent({ contents: options.contents });
     const response = result.response;
-    const modelContent = response.candidates?.[0]?.content;
-    const functionCalls = (modelContent?.parts ?? [])
+    const rawContent = response.candidates?.[0]?.content;
+    const functionCalls = (rawContent?.parts ?? [])
       .map((part) => part.functionCall)
       .filter((call): call is NonNullable<typeof call> => Boolean(call));
+    const modelContent = preserveModelContent(rawContent, functionCalls);
     if (functionCalls.length > 0) {
-      return { modelContent, functionCalls, text: "" };
+      return { modelName, modelContent, functionCalls, text: "" };
     }
-    return { modelContent, functionCalls: [], text: response.text() };
+    return { modelName, modelContent, functionCalls: [], text: response.text() };
   });
 }

@@ -8,7 +8,7 @@
  * 4. Verifier が回答を点検し、不合格なら一度だけ書き直す
  * 5. SSE で画面の Execution Trace を更新する
  */
-import type { Content, FunctionCall } from "@google/generative-ai";
+import type { Content } from "@google/generative-ai";
 import {
   generateAgentTurn,
   generateText,
@@ -21,6 +21,8 @@ import { getSession, saveSession } from "@/lib/store/db";
 import type {
   AgentEvent,
   ChatMessage,
+  IoRecord,
+  RunIoLog,
   SessionRecord,
   TraceStep,
   VerificationResult,
@@ -44,8 +46,8 @@ Toolの使い分け:
 - searchKnowledge: Notionの社内ナレッジ（就業規則・売上・資産・福利厚生など）。一般雑学には使わない。読み取り専用。
 - listNotionDatabases: Integrationが見えるNotionデータベース一覧。社内ナレッジ以外へ書くとき先に使う。
 - listNotionPages: Notionのページ一覧。databaseId を渡せばそのDB。追記先を探すとき。
-- createNotionPage: Notionに新しいページを作って本文を書く。databaseId / databaseTitle / parentPageId で作成先を指定できる。省略時だけ社内ナレッジDB。
-- appendNotionPage: 既存Notionページの末尾に追記する。pageId（URL可）があればどのページでもよい。
+- createNotionPage: Notionに新しいページを作って本文を書く。databaseId / databaseTitle / parentPageId で作成先を指定できる。省略時だけ社内ナレッジDB。コード解説は Markdown のコードフェンス（言語名付きの三重バッククォート）で囲む。
+- appendNotionPage: 既存Notionページの末尾に追記する。pageId（URL可）があればどのページでもよい。コードもコードフェンスで書く。
 - addNotionDatabaseProperty: Notionデータベースに列を追加する。ユーザーがプロパティを足してと依頼したとき。
 - removeNotionDatabaseProperty: Notionデータベースから列を削除する。ユーザーがプロパティを消してと依頼したとき。タイトル列は消せない。
 - answerQuestion: 一般的な事実質問。検索は Gemini に任せる。
@@ -224,7 +226,17 @@ async function ensureSession(sessionId: string, message: string): Promise<Sessio
     messages: [],
     traces: [],
     toolExecutions: [],
+    ioLogs: [],
   };
+}
+
+/** ログ用に JSON 化できる形へ落とす。循環参照などは文字列にする。 */
+function toJsonValue(value: unknown): JsonValue {
+  try {
+    return JSON.parse(JSON.stringify(value)) as JsonValue;
+  } catch {
+    return String(value);
+  }
 }
 
 /** 1つの Tool を実行し、Trace と SSE を同時に更新する。 */
@@ -233,11 +245,18 @@ async function runOneTool(options: {
   name: string;
   args: Record<string, JsonValue>;
   emit: Emit;
+  log: (record: Omit<IoRecord, "id" | "at">) => void;
   traces: TraceStep[];
   executions: ToolExecution[];
   toolResults: JsonValue[];
 }) {
-  const { toolId, name, args, emit, traces, executions, toolResults } = options;
+  const { toolId, name, args, emit, log, traces, executions, toolResults } = options;
+  log({
+    channel: "tool",
+    direction: "in",
+    label: `${name} へ渡した引数`,
+    payload: { toolId, name, arguments: args },
+  });
   emit({ type: "tool.started", data: { id: toolId, name, arguments: args } });
   const execution: ToolExecution = {
     id: toolId,
@@ -264,6 +283,12 @@ async function runOneTool(options: {
     toolResults.push(result);
     traces[traces.length - 1].status = "completed";
     traces[traces.length - 1].detail = "Success";
+    log({
+      channel: "tool",
+      direction: "out",
+      label: `${name} からの戻り値`,
+      payload: { toolId, name, status: "success", result },
+    });
     emit({
       type: "tool.completed",
       data: { id: toolId, name, status: "success", result },
@@ -276,6 +301,12 @@ async function runOneTool(options: {
     execution.endedAt = Date.now();
     traces[traces.length - 1].status = "failed";
     traces[traces.length - 1].detail = message;
+    log({
+      channel: "tool",
+      direction: "out",
+      label: `${name} のエラー`,
+      payload: { toolId, name, status: "error", error: message },
+    });
     emit({
       type: "tool.completed",
       data: { id: toolId, name, status: "error", error: message },
@@ -300,6 +331,14 @@ export async function runAgent(options: {
 }) {
   const started = Date.now();
   const eventLog: { at: number; type: AgentEvent["type"]; data: JsonValue }[] = [];
+  const exchanges: IoRecord[] = [];
+  const log = (record: Omit<IoRecord, "id" | "at">) => {
+    exchanges.push({
+      id: id("io"),
+      at: Date.now(),
+      ...record,
+    });
+  };
   /** 画面へ流しつつ、データログ用に同じイベントを残す。 */
   const emit: Emit = (event) => {
     eventLog.push({
@@ -317,6 +356,12 @@ export async function runAgent(options: {
     createdAt: Date.now(),
   };
 
+  log({
+    channel: "user",
+    direction: "in",
+    label: "ユーザー入力",
+    payload: { sessionId, content: options.message },
+  });
   emit({ type: "agent.started", data: { status: "running", sessionId } });
   emit({
     type: "agent.planning",
@@ -339,6 +384,29 @@ export async function runAgent(options: {
   ];
   const executions: ToolExecution[] = [];
   const toolResults: JsonValue[] = [];
+  const geminiTools = toGeminiTools();
+
+  /** 失敗時も含め、この発言の入出力を会話に残す。 */
+  async function persistIo(answer?: string, verification?: VerificationResult) {
+    const runLog: RunIoLog = {
+      id: id("run"),
+      startedAt: started,
+      endedAt: Date.now(),
+      userMessage: options.message,
+      exchanges,
+    };
+    session.traces = traces;
+    session.toolExecutions = executions;
+    session.eventLog = eventLog;
+    session.ioLogs = [...(session.ioLogs ?? []), runLog];
+    if (answer !== undefined) session.lastAnswer = answer;
+    if (verification) session.verification = verification;
+    session.updatedAt = Date.now();
+    if (session.messages.filter((item) => item.role === "user").length === 1) {
+      session.title = titleFromMessage(options.message);
+    }
+    await saveSession(session);
+  }
 
   try {
     let answer = "";
@@ -348,6 +416,12 @@ export async function runAgent(options: {
       const calls = demoPlan(options.message);
       traces[0].status = "completed";
       traces[0].detail = "デモプランナーが Tool を選択しました";
+      log({
+        channel: "gemini",
+        direction: "out",
+        label: "デモプランナーの Tool 選択",
+        payload: { functionCalls: calls },
+      });
       emit({
         type: "agent.planning",
         data: { status: "completed", detail: traces[0].detail },
@@ -359,6 +433,7 @@ export async function runAgent(options: {
           name: call.name,
           args: call.args,
           emit,
+          log,
           traces,
           executions,
           toolResults,
@@ -372,10 +447,44 @@ export async function runAgent(options: {
 
       while (rounds < MAX_TOOL_ROUNDS && !finished) {
         rounds += 1;
+        log({
+          channel: "gemini",
+          direction: "in",
+          label: `Gemini へ送った内容（${rounds}ラウンド目）`,
+          payload: toJsonValue({
+            round: rounds,
+            systemInstruction: AGENT_INSTRUCTIONS,
+            tools: geminiTools.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            })),
+            contents,
+          }),
+        });
         const turn = await generateAgentTurn({
           systemInstruction: AGENT_INSTRUCTIONS,
-          tools: toGeminiTools(),
+          tools: geminiTools,
           contents,
+        });
+        const selected = turn.functionCalls.map((call) => ({
+          id: "id" in call && typeof call.id === "string" ? call.id : undefined,
+          name: call.name,
+          args: asArgs(call.args),
+        }));
+        log({
+          channel: "gemini",
+          direction: "out",
+          label: selected.length
+            ? `Gemini の Tool 選択（${selected.map((item) => item.name).join(", ")}）`
+            : "Gemini のテキスト回答",
+          payload: toJsonValue({
+            round: rounds,
+            model: turn.modelName,
+            functionCalls: selected,
+            text: turn.text || null,
+            modelContent: turn.modelContent ?? null,
+          }),
         });
 
         if (rounds === 1) {
@@ -389,16 +498,9 @@ export async function runAgent(options: {
           });
         }
 
-        // Tool 要求がある間は、モデルの functionCall を会話に残し、結果を user 役で返す
+        // Tool 要求がある間は、署名付きの model content を会話に残し、結果を user 役で返す
         if (turn.functionCalls.length > 0) {
-          contents.push(
-            turn.modelContent ?? {
-              role: "model",
-              parts: turn.functionCalls.map((call: FunctionCall) => ({
-                functionCall: call,
-              })),
-            },
-          );
+          contents.push(turn.modelContent);
 
           const responseParts = [];
           for (const call of turn.functionCalls) {
@@ -409,6 +511,7 @@ export async function runAgent(options: {
               name: call.name,
               args,
               emit,
+              log,
               traces,
               executions,
               toolResults,
@@ -422,6 +525,12 @@ export async function runAgent(options: {
               },
             });
           }
+          log({
+            channel: "gemini",
+            direction: "in",
+            label: "Tool 結果を Gemini へ返した内容",
+            payload: toJsonValue(responseParts),
+          });
           contents.push({
             role: "user",
             parts: responseParts,
@@ -447,28 +556,70 @@ export async function runAgent(options: {
       detail: "回答と Tool 結果を照合しています",
     });
 
-    let verification: VerificationResult = await verifyResult({
+    const verifierInput = {
       userRequest: options.message,
       toolResults,
       finalAnswer: answer,
+    };
+    log({
+      channel: "verifier",
+      direction: "in",
+      label: "Verifier へ渡した内容",
+      payload: toJsonValue(verifierInput),
+    });
+    let verification: VerificationResult = await verifyResult(verifierInput);
+    log({
+      channel: "verifier",
+      direction: "out",
+      label: `Verifier の判定（${verification.status}）`,
+      payload: toJsonValue(verification),
     });
 
     // 不合格なら指摘を渡してもう一度生成し、再検証する（クォータ不足なら現状のまま返す）
     if (verification.status === "failed" && hasGeminiKey()) {
       try {
-        answer = await generateText(
-          `元の依頼:\n${options.message}\n\n現在の回答:\n${answer}\n\n検証で指摘された問題:\n${verification.issues.join("\n")}\n\n指摘を解消した最終回答だけを返してください。`,
-          AGENT_INSTRUCTIONS,
-        );
-        verification = await verifyResult({
+        const rewritePrompt = `元の依頼:\n${options.message}\n\n現在の回答:\n${answer}\n\n検証で指摘された問題:\n${verification.issues.join("\n")}\n\n指摘を解消した最終回答だけを返してください。`;
+        log({
+          channel: "gemini",
+          direction: "in",
+          label: "Verifier 不合格後の書き直し依頼",
+          payload: { prompt: rewritePrompt },
+        });
+        answer = await generateText(rewritePrompt, AGENT_INSTRUCTIONS);
+        log({
+          channel: "gemini",
+          direction: "out",
+          label: "書き直し後の回答",
+          payload: { text: answer },
+        });
+        const retryInput = {
           userRequest: options.message,
           toolResults,
           finalAnswer: answer,
+        };
+        log({
+          channel: "verifier",
+          direction: "in",
+          label: "再検証へ渡した内容",
+          payload: toJsonValue(retryInput),
+        });
+        verification = await verifyResult(retryInput);
+        log({
+          channel: "verifier",
+          direction: "out",
+          label: `再検証の判定（${verification.status}）`,
+          payload: toJsonValue(verification),
         });
       } catch (error) {
         if (!isQuotaError(error)) {
           throw error;
         }
+        log({
+          channel: "gemini",
+          direction: "out",
+          label: "書き直しをスキップ（クォータ）",
+          payload: { error: error instanceof Error ? error.message : String(error) },
+        });
       }
     }
 
@@ -485,6 +636,13 @@ export async function runAgent(options: {
       detail: "分析結果をユーザーに返却",
     });
 
+    log({
+      channel: "assistant",
+      direction: "out",
+      label: "最終回答",
+      payload: { content: answer, verification },
+    });
+
     const assistantMessage: ChatMessage = {
       id: id("msg"),
       role: "assistant",
@@ -492,16 +650,7 @@ export async function runAgent(options: {
       createdAt: Date.now(),
     };
     session.messages.push(assistantMessage);
-    session.traces = traces;
-    session.toolExecutions = executions;
-    session.eventLog = eventLog;
-    session.lastAnswer = answer;
-    session.verification = verification;
-    session.updatedAt = Date.now();
-    if (session.messages.filter((item) => item.role === "user").length === 1) {
-      session.title = titleFromMessage(options.message);
-    }
-    await saveSession(session);
+    await persistIo(answer, verification);
 
     emit({ type: "agent.delta", data: { content: answer } });
     emit({
@@ -518,6 +667,17 @@ export async function runAgent(options: {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "エージェント実行に失敗しました";
+    log({
+      channel: "assistant",
+      direction: "out",
+      label: "実行エラー",
+      payload: { message },
+    });
     emit({ type: "agent.error", data: { message } });
+    try {
+      await persistIo();
+    } catch {
+      // 保存失敗でも SSE のエラーは返す
+    }
   }
 }

@@ -26,7 +26,7 @@ function embeddingView(value: unknown) {
 function flowSteps() {
   return [
     { step: "1. ユーザー入力", detail: "ブラウザのチャット。送信後はセッションの messages に入る" },
-    { step: "2. Orchestrator", detail: "Gemini が Tool を選ぶ。途中経過は SSE と session.eventLog" },
+    { step: "2. Orchestrator", detail: "Gemini が Tool を選ぶ。入出力は session.ioLogs（全発言ぶん）と SSE" },
     { step: "3. searchKnowledge", detail: "Notion → チャンク → embedding。本体は PostgreSQL knowledge_chunks" },
     { step: "4. その他 Tool", detail: "calculate はメモリ上、saveMemo は PostgreSQL memos。createNotionPage / appendNotionPage は Notion DB へ書き込み" },
     { step: "5. Verifier / 回答", detail: "session.verification と lastAnswer。会話全体は PostgreSQL chat_sessions" },

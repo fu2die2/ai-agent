@@ -109,7 +109,7 @@ export const toolDefinitions: ToolDefinition[] = [
       type: "object",
       properties: {
         title: { type: "string", description: "ページタイトル" },
-        content: { type: "string", description: "本文。Markdown可（見出し・箇条書き・段落）" },
+        content: { type: "string", description: "本文。Markdown可。コードは言語名付きのフェンス（三重バッククォート）で囲むと Notion のコードブロックになる" },
         category: { type: "string", description: "カテゴリ列があれば設定。例: 総務" },
         keywords: { type: "string", description: "キーワード。カンマ区切り" },
         databaseId: { type: "string", description: "作成先データベースの ID または URL" },
@@ -126,7 +126,7 @@ export const toolDefinitions: ToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        content: { type: "string", description: "追記する本文。Markdown可" },
+        content: { type: "string", description: "追記する本文。Markdown可。コードは言語名付きフェンスで囲む" },
         pageId: { type: "string", description: "ページIDまたはNotionのURL" },
         title: { type: "string", description: "pageIdが無いときのページタイトル" },
       },

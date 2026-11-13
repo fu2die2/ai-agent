@@ -1,6 +1,6 @@
 /**
  * 処理の流れと、データがどこにどう入っているかを見る画面。
- * 会話を選ぶと、最後の実行の eventLog / Tool 引数と戻り値が見える。
+ * 会話を選ぶと、全発言の Gemini / Tool 入出力が見える。
  */
 "use client";
 
@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { MarkdownBody } from "@/components/chat/MarkdownBody";
 import { JsonBlock } from "@/components/inspect/JsonBlock";
-import type { SessionRecord } from "@/types/agent";
+import type { IoChannel, IoRecord, RunIoLog, SessionRecord } from "@/types/agent";
 import type { InspectSnapshot } from "@/types/inspect";
 
 type Tab = "flow" | "session" | "chunks" | "memos";
@@ -110,7 +110,7 @@ export function DataLogScreen() {
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-5">
         {error && <p className="mb-4 text-sm text-rose-600">{error}</p>}
         {!snapshot && !error && <p className="text-sm text-slate-500">読み込み中…</p>}
         {snapshot && tab === "flow" && <FlowPanel snapshot={snapshot} />}
@@ -209,7 +209,24 @@ function SummaryCard({
   );
 }
 
-/** 1会話の eventLog と Tool 入出力を見る。 */
+const CHANNEL_FILTERS: { id: "all" | IoChannel; label: string }[] = [
+  { id: "all", label: "すべて" },
+  { id: "user", label: "ユーザー" },
+  { id: "gemini", label: "Gemini" },
+  { id: "tool", label: "Tool" },
+  { id: "verifier", label: "Verifier" },
+  { id: "assistant", label: "最終回答" },
+];
+
+const CHANNEL_LABEL: Record<IoChannel, string> = {
+  user: "ユーザー",
+  gemini: "Gemini",
+  tool: "Tool",
+  verifier: "Verifier",
+  assistant: "アシスタント",
+};
+
+/** 1会話の全発言の in/out を見る。 */
 function SessionPanel({
   snapshot,
   sessionId,
@@ -221,8 +238,10 @@ function SessionPanel({
   session: SessionRecord | null;
   onSelect: (id: string) => void;
 }) {
+  const [filter, setFilter] = useState<"all" | IoChannel>("all");
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
       <div className="space-y-1">
         {snapshot.stores.sessions.items.length === 0 && (
           <p className="text-sm text-slate-500">まだ会話がありません</p>
@@ -243,7 +262,7 @@ function SessionPanel({
           </button>
         ))}
       </div>
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4 overflow-x-auto">
         {!session && <p className="text-sm text-slate-500">会話を選ぶと中身が出ます</p>}
         {session && (
           <>
@@ -251,59 +270,196 @@ function SessionPanel({
               保存先 {snapshot.stores.sessions.where} / id {session.id}
             </p>
             <section>
-              <h2 className="mb-2 text-sm font-medium text-slate-800">最後の実行イベント</h2>
+              <h2 className="mb-2 text-sm font-medium text-slate-800">会話本文</h2>
               <div className="space-y-2">
-                {(session.eventLog ?? []).length === 0 && (
-                  <p className="text-sm text-slate-500">
-                    この会話には eventLog がありません。ログ対応後に送信した会話を選んでください。
-                  </p>
-                )}
-                {(session.eventLog ?? []).map((event, index) => (
+                {session.messages.map((message) => (
                   <div
-                    key={`${event.at}-${index}`}
+                    key={message.id}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-mono text-xs text-sky-800">{event.type}</p>
-                      <p className="text-[11px] text-slate-400">{formatTime(event.at)}</p>
+                      <p className="text-xs font-medium text-slate-700">
+                        {message.role === "user" ? "ユーザー" : "アシスタント"}
+                      </p>
+                      <p className="text-[11px] text-slate-400">{formatTime(message.createdAt)}</p>
                     </div>
-                    <JsonBlock value={event.data} label="data" />
+                    <div className="mt-1 min-w-0 overflow-x-auto text-sm text-slate-800">
+                      <MarkdownBody content={message.content} tone={message.role === "user" ? "user" : "assistant"} />
+                    </div>
                   </div>
                 ))}
               </div>
             </section>
             <section>
-              <h2 className="mb-2 text-sm font-medium text-slate-800">Tool の引数と戻り値</h2>
-              {session.toolExecutions.length === 0 ? (
-                <p className="text-sm text-slate-500">この実行では Tool は使っていません</p>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-medium text-slate-800">全 in / out</h2>
+                <div className="flex flex-wrap gap-1">
+                  {CHANNEL_FILTERS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setFilter(item.id)}
+                      className={`rounded-md px-2 py-1 text-[11px] ${
+                        filter === item.id
+                          ? "bg-sky-600 text-white"
+                          : "bg-white text-slate-500 ring-1 ring-slate-200"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {(session.ioLogs ?? []).length === 0 ? (
+                <LegacyIoPanel session={session} />
               ) : (
-                session.toolExecutions.map((execution) => (
-                  <div key={execution.id} className="mb-3 space-y-2">
-                    <p className="text-sm text-slate-700">
-                      {execution.name} / {execution.status}
-                    </p>
-                    <JsonBlock value={execution.arguments} label="arguments" />
-                    <JsonBlock
-                      value={execution.result ?? execution.error ?? null}
-                      label="result"
+                <div className="space-y-3">
+                  {(session.ioLogs ?? []).map((run, index) => (
+                    <RunIoPanel
+                      key={run.id}
+                      run={run}
+                      index={index}
+                      total={(session.ioLogs ?? []).length}
+                      filter={filter}
+                      defaultOpen={index === (session.ioLogs ?? []).length - 1}
                     />
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </section>
+            {(session.eventLog ?? []).length > 0 && (
+              <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <summary className="cursor-pointer text-sm text-slate-700">
+                  最後の実行の SSE イベント（{session.eventLog?.length ?? 0} 件）
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {(session.eventLog ?? []).map((event, index) => (
+                    <div key={`${event.at}-${index}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-mono text-xs text-sky-800">{event.type}</p>
+                        <p className="text-[11px] text-slate-400">{formatTime(event.at)}</p>
+                      </div>
+                      <JsonBlock value={event.data} label="data" />
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             <JsonBlock
               value={{
                 id: session.id,
                 title: session.title,
                 messages: session.messages,
                 traces: session.traces,
+                toolExecutions: session.toolExecutions,
+                ioLogs: session.ioLogs,
                 verification: session.verification,
                 lastAnswer: session.lastAnswer,
               }}
-              label="session（会話の持ち方）"
+              label="session（保存されている全文）"
             />
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** ioLogs が無い古い会話向け。最後の実行の Tool だけ出す。 */
+function LegacyIoPanel({ session }: { session: SessionRecord }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-slate-500">
+        この会話には全 in/out ログがありません。拡張後に送信した会話を選ぶと、Gemini の Tool 選択まで見られます。
+      </p>
+      {session.toolExecutions.length === 0 ? (
+        <p className="text-sm text-slate-500">この実行では Tool は使っていません</p>
+      ) : (
+        session.toolExecutions.map((execution) => (
+          <div key={execution.id} className="space-y-2">
+            <p className="text-sm text-slate-700">
+              {execution.name} / {execution.status}
+            </p>
+            <JsonBlock value={execution.arguments} label="IN arguments" />
+            <JsonBlock
+              value={execution.result ?? execution.error ?? null}
+              label="OUT result"
+            />
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** ユーザー発言1回ぶんの入出力。 */
+function RunIoPanel({
+  run,
+  index,
+  total,
+  filter,
+  defaultOpen,
+}: {
+  run: RunIoLog;
+  index: number;
+  total: number;
+  filter: "all" | IoChannel;
+  defaultOpen: boolean;
+}) {
+  const items = run.exchanges.filter((item) => filter === "all" || item.channel === filter);
+  return (
+    <details
+      open={defaultOpen}
+      className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2"
+    >
+      <summary className="cursor-pointer text-sm text-slate-800">
+        実行 {index + 1}/{total}
+        <span className="ml-2 text-xs font-normal text-slate-400">
+          {formatTime(run.startedAt)}
+          {run.endedAt ? ` → ${formatTime(run.endedAt)}` : ""}
+          {` / ${run.exchanges.length} 件`}
+        </span>
+        <span className="mt-1 block truncate text-xs font-normal text-slate-500">
+          {run.userMessage}
+        </span>
+      </summary>
+      <div className="mt-3 space-y-2">
+        {items.length === 0 && (
+          <p className="text-sm text-slate-500">このフィルタに該当する入出力はありません</p>
+        )}
+        {items.map((item) => (
+          <IoCard key={item.id} record={item} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/** 1件の in または out。 */
+function IoCard({ record }: { record: IoRecord }) {
+  const inbound = record.direction === "in";
+  return (
+    <div
+      className={`min-w-0 rounded-lg border px-3 py-2 ${
+        inbound ? "border-sky-200 bg-sky-50/70" : "border-emerald-200 bg-emerald-50/70"
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+              inbound ? "bg-sky-600 text-white" : "bg-emerald-600 text-white"
+            }`}
+          >
+            {inbound ? "IN" : "OUT"}
+          </span>
+          <span className="text-[11px] text-slate-500">{CHANNEL_LABEL[record.channel]}</span>
+          <span className="text-sm text-slate-800">{record.label}</span>
+        </div>
+        <p className="text-[11px] text-slate-400">{formatTime(record.at)}</p>
+      </div>
+      <div className="mt-2">
+        <JsonBlock value={record.payload} label={inbound ? "IN" : "OUT"} />
       </div>
     </div>
   );

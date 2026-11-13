@@ -95,12 +95,36 @@ export type LoggedEvent = {
   data: JsonValue;
 };
 
+/** 1回のモデル／Tool／検証の入出力。会話データ画面のタイムライン用。 */
+export type IoChannel = "user" | "gemini" | "tool" | "verifier" | "assistant";
+
+export type IoDirection = "in" | "out";
+
+export type IoRecord = {
+  id: string;
+  at: number;
+  channel: IoChannel;
+  direction: IoDirection;
+  label: string;
+  payload: JsonValue;
+};
+
+/** ユーザー発言1回ぶんの入出力ログ。上書きせず会話に積み上げる。 */
+export type RunIoLog = {
+  id: string;
+  startedAt: number;
+  endedAt?: number;
+  userMessage: string;
+  exchanges: IoRecord[];
+};
+
 /** 1会話の全文。履歴クリックでこのレコードを読み戻す。 */
 export type SessionRecord = SessionSummary & {
   messages: ChatMessage[];
   traces: TraceStep[];
   toolExecutions: ToolExecution[];
   eventLog?: LoggedEvent[];
+  ioLogs?: RunIoLog[];
   lastAnswer?: string;
   verification?: VerificationResult;
 };
