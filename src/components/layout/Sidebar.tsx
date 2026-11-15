@@ -15,9 +15,9 @@ export function Sidebar({ sessions, currentId, onSelect, onNew }: Props) {
       <div className="flex items-center justify-between px-4 py-4">
         <div>
           <p className="text-[11px] tracking-[0.22em] text-slate-400 uppercase">
-            Agent Studio
+            Agent
           </p>
-          <p className="mt-1 font-medium text-slate-900">AI AGENT</p>
+          <p className="mt-1 font-medium text-slate-900">MY HERO AGENT</p>
         </div>
         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
           Online

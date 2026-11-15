@@ -1,0 +1,15 @@
+---
+description: 機能実装のたびに MY HERO AGENT 設計書を更新し Notion RAG へ同期する
+alwaysApply: true
+---
+
+# 設計書の更新
+
+機能・画面・API・Tool・DB・RAG の流れを変えたら、コミット前に次を行う。
+
+1. `docs/design.md` の該当節（概要・フロー・ER・API・Tools）を実装に合わせて直す。日付を更新する。
+2. 新しい図が必要なら mermaid の flowchart / sequenceDiagram / erDiagram を足す。
+3. `npm run docs:sync` で社内ナレッジ Notion の「MY HERO AGENT 設計書」へ反映する。
+4. チャットで設計を聞かれたら `searchKnowledge` がこのページを拾える想定で書く。別 DB には置かない。
+
+コードだけ変えて設計書を放置しない。

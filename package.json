@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "knowledge:index": "tsx --env-file=.env --env-file=.env.local scripts/index-knowledge.ts"
+    "knowledge:index": "tsx --env-file=.env --env-file=.env.local scripts/index-knowledge.ts",
+    "docs:sync": "tsx --env-file=.env --env-file=.env.local scripts/sync-design-doc.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

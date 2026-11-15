@@ -46,11 +46,178 @@ export function normalizePageId(raw: string) {
   return extracted || trimmed;
 }
 
-/** 1ブロック分の rich_text。2000 文字制限を分割して守る。 */
-function richText(content: string): Array<{ type: "text"; text: { content: string } }> {
+type TextMarks = {
+  bold: boolean;
+  italic: boolean;
+  strikethrough: boolean;
+  code: boolean;
+};
+
+type InlinePiece = TextMarks & {
+  content: string;
+  href?: string;
+};
+
+const PLAIN_MARKS: TextMarks = {
+  bold: false,
+  italic: false,
+  strikethrough: false,
+  code: false,
+};
+
+/** 次の Markdown 記号の位置。無ければ末尾。 */
+function nextInlineMarker(input: string, from: number) {
+  let min = input.length;
+  for (const marker of ["*", "`", "~", "["]) {
+    const at = input.indexOf(marker, from);
+    if (at >= 0 && at < min) min = at;
+  }
+  return min;
+}
+
+/** 太字・斜体・打ち消し・インラインコード・リンクを分割する。 */
+function parseInlineMarkdown(input: string, inherited: TextMarks = PLAIN_MARKS): InlinePiece[] {
+  const pieces: InlinePiece[] = [];
+  let i = 0;
+
+  const emit = (content: string, extra: Partial<InlinePiece> = {}) => {
+    if (!content) return;
+    pieces.push({
+      content,
+      bold: extra.bold ?? inherited.bold,
+      italic: extra.italic ?? inherited.italic,
+      strikethrough: extra.strikethrough ?? inherited.strikethrough,
+      code: extra.code ?? inherited.code,
+      href: extra.href,
+    });
+  };
+
+  while (i < input.length) {
+    if (inherited.code) {
+      emit(input.slice(i));
+      break;
+    }
+
+    const link = input.slice(i).match(/^\[([^\]]+)\]\((https?:[^)\s]+)\)/);
+    if (link) {
+      const inner = parseInlineMarkdown(link[1], inherited);
+      for (const part of inner) {
+        pieces.push({ ...part, href: part.href ?? link[2] });
+      }
+      i += link[0].length;
+      continue;
+    }
+
+    if (input[i] === "`") {
+      const end = input.indexOf("`", i + 1);
+      if (end > i) {
+        emit(input.slice(i + 1, end), { code: true });
+        i = end + 1;
+        continue;
+      }
+    }
+
+    if (input.startsWith("***", i)) {
+      const end = input.indexOf("***", i + 3);
+      if (end > i) {
+        pieces.push(
+          ...parseInlineMarkdown(input.slice(i + 3, end), {
+            ...inherited,
+            bold: true,
+            italic: true,
+          }),
+        );
+        i = end + 3;
+        continue;
+      }
+    }
+
+    if (input.startsWith("**", i)) {
+      const end = input.indexOf("**", i + 2);
+      if (end > i) {
+        pieces.push(
+          ...parseInlineMarkdown(input.slice(i + 2, end), { ...inherited, bold: true }),
+        );
+        i = end + 2;
+        continue;
+      }
+    }
+
+    if (input.startsWith("~~", i)) {
+      const end = input.indexOf("~~", i + 2);
+      if (end > i) {
+        pieces.push(
+          ...parseInlineMarkdown(input.slice(i + 2, end), {
+            ...inherited,
+            strikethrough: true,
+          }),
+        );
+        i = end + 2;
+        continue;
+      }
+    }
+
+    if (input[i] === "*" && input[i + 1] !== "*") {
+      const end = input.indexOf("*", i + 1);
+      if (end > i && input[end + 1] !== "*") {
+        pieces.push(
+          ...parseInlineMarkdown(input.slice(i + 1, end), { ...inherited, italic: true }),
+        );
+        i = end + 1;
+        continue;
+      }
+    }
+
+    const next = nextInlineMarker(input, i + 1);
+    emit(input.slice(i, next));
+    i = next;
+  }
+
+  return pieces;
+}
+
+type NotionText = {
+  type: "text";
+  text: { content: string; link?: { url: string } };
+  annotations?: {
+    bold?: boolean;
+    italic?: boolean;
+    strikethrough?: boolean;
+    code?: boolean;
+  };
+};
+
+/** ページタイトルなど、Markdown を解釈しない rich_text。 */
+function richText(content: string): NotionText[] {
   const text = content.slice(0, MAX_RICH_TEXT * 2);
   if (!text) return [{ type: "text", text: { content: "" } }];
   return richTextChunks(text);
+}
+
+/** 見出し・段落・リスト用。**太字** や `コード` を Notion の注釈にする。 */
+function styledRichText(content: string): NotionText[] {
+  const pieces = parseInlineMarkdown(content);
+  if (pieces.length === 0) return [{ type: "text", text: { content: "" } }];
+  const items: NotionText[] = [];
+  for (const piece of pieces) {
+    for (let i = 0; i < piece.content.length; i += MAX_RICH_TEXT) {
+      const chunk = piece.content.slice(i, i + MAX_RICH_TEXT);
+      const item: NotionText = {
+        type: "text",
+        text: piece.href ? { content: chunk, link: { url: piece.href } } : { content: chunk },
+      };
+      if (piece.bold || piece.italic || piece.strikethrough || piece.code) {
+        item.annotations = {
+          ...(piece.bold ? { bold: true } : {}),
+          ...(piece.italic ? { italic: true } : {}),
+          ...(piece.strikethrough ? { strikethrough: true } : {}),
+          ...(piece.code ? { code: true } : {}),
+        };
+      }
+      items.push(item);
+    }
+  }
+  return items;
 }
 
 /** 文字数制限だけ分割する。コードブロックは長めでも切らずに載せる。 */
@@ -229,38 +396,52 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
 
     if (!trimmed) continue;
 
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      push({ divider: {} });
+      continue;
+    }
     if (trimmed.startsWith("### ")) {
-      push({ heading_3: { rich_text: richText(trimmed.slice(4)) } });
+      push({ heading_3: { rich_text: styledRichText(trimmed.slice(4)) } });
       continue;
     }
     if (trimmed.startsWith("## ")) {
-      push({ heading_2: { rich_text: richText(trimmed.slice(3)) } });
+      push({ heading_2: { rich_text: styledRichText(trimmed.slice(3)) } });
       continue;
     }
     if (trimmed.startsWith("# ")) {
-      push({ heading_1: { rich_text: richText(trimmed.slice(2)) } });
+      push({ heading_1: { rich_text: styledRichText(trimmed.slice(2)) } });
+      continue;
+    }
+    const todo = trimmed.match(/^[-*] \[([ xX])\]\s+(.*)$/);
+    if (todo) {
+      push({
+        to_do: {
+          rich_text: styledRichText(todo[2]),
+          checked: todo[1].toLowerCase() === "x",
+        },
+      });
       continue;
     }
     if (/^[-*] /.test(trimmed)) {
-      push({ bulleted_list_item: { rich_text: richText(trimmed.slice(2)) } });
+      push({ bulleted_list_item: { rich_text: styledRichText(trimmed.slice(2)) } });
       continue;
     }
     const numbered = trimmed.match(/^\d+\.\s+(.*)$/);
     if (numbered) {
-      push({ numbered_list_item: { rich_text: richText(numbered[1]) } });
+      push({ numbered_list_item: { rich_text: styledRichText(numbered[1]) } });
       continue;
     }
     if (trimmed.startsWith("> ")) {
-      push({ quote: { rich_text: richText(trimmed.slice(2)) } });
+      push({ quote: { rich_text: styledRichText(trimmed.slice(2)) } });
       continue;
     }
-    push({ paragraph: { rich_text: richText(trimmed) } });
+    push({ paragraph: { rich_text: styledRichText(trimmed) } });
   }
 
   flushCode();
 
   if (blocks.length === 0) {
-    push({ paragraph: { rich_text: richText(markdown.trim() || " ") } });
+    push({ paragraph: { rich_text: styledRichText(markdown.trim() || " ") } });
   }
   return blocks;
 }
@@ -380,6 +561,8 @@ function extraProperties(
       const value = input.category.trim();
       if (config.type === "select" || config.type === "status") {
         properties[name] = { [config.type]: { name: value } };
+      } else if (config.type === "multi_select") {
+        properties[name] = { multi_select: [{ name: value }] };
       } else if (config.type === "rich_text") {
         properties[name] = { rich_text: richText(value) };
       }
@@ -719,4 +902,42 @@ export async function removeNotionDatabaseProperty(input: {
     databaseTitle: dataSourceTitle(updated),
     url: updated.url,
   };
+}
+
+export const APP_DESIGN_DOC_TITLE = "MY HERO AGENT 設計書";
+
+/** ページ本文のブロックを全部消してから Markdown を書き直す。 */
+export async function replaceNotionPageBody(pageId: string, content: string) {
+  const client = getNotionClient();
+  const id = normalizePageId(pageId);
+  let cursor: string | undefined;
+  do {
+    const response = await client.blocks.children.list({
+      block_id: id,
+      start_cursor: cursor,
+      page_size: 100,
+    });
+    for (const block of response.results) {
+      await client.blocks.delete({ block_id: block.id });
+    }
+    cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
+  } while (cursor);
+  await appendBlockBatches(client, id, markdownToBlocks(content));
+}
+
+/** 社内ナレッジ DB に設計書ページを作るか、既存を本文ごと更新する。RAG の正本用。 */
+export async function upsertAppDesignDoc(content: string) {
+  const pages = await listNotionPages(APP_DESIGN_DOC_TITLE);
+  const existing = pages.find((page) => page.title === APP_DESIGN_DOC_TITLE);
+  if (existing) {
+    await replaceNotionPageBody(existing.id, content);
+    return { ...existing, updated: true as const, created: false as const };
+  }
+  const created = await createNotionPage({
+    title: APP_DESIGN_DOC_TITLE,
+    content,
+    category: "開発",
+    keywords: "設計,RAG,アーキテクチャ,MY HERO AGENT,ER,フロー",
+  });
+  return { ...created, updated: false as const, created: true as const };
 }

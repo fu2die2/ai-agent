@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Studio",
+  title: "MY HERO AGENT",
   description: "Tool Calling と Verifier を備えた AI エージェント",
 };
 

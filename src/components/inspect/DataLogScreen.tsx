@@ -75,7 +75,7 @@ export function DataLogScreen() {
     <div className="flex h-screen flex-col bg-[#f4f7fb] text-slate-800">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
         <div>
-          <p className="text-sm text-slate-500">Data log</p>
+          <p className="text-sm text-slate-500">MY HERO AGENT</p>
           <h1 className="text-lg font-medium text-slate-900">処理の流れとデータの持ち方</h1>
         </div>
         <div className="flex items-center gap-3">
