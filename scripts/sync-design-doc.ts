@@ -1,6 +1,6 @@
 /**
- * docs/design.md を社内ナレッジ Notion へ upsert する。
- * RAG は NOTION_DATABASE_ID だけを読むので、設計書もそこに置く。
+ * docs/design.md を設計書 Notion DB へ upsert する。
+ * RAG は社内文書 DB と設計書 DB の両方を読む。
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";

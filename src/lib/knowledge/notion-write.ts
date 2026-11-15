@@ -17,6 +17,7 @@ import {
 import {
   getNotionClient,
   notionDatabaseId,
+  notionDesignDatabaseId,
   notionPageUrl,
   resolveDataSourceId,
 } from "./notion-client";
@@ -925,9 +926,10 @@ export async function replaceNotionPageBody(pageId: string, content: string) {
   await appendBlockBatches(client, id, markdownToBlocks(content));
 }
 
-/** 社内ナレッジ DB に設計書ページを作るか、既存を本文ごと更新する。RAG の正本用。 */
+/** 設計書 DB（無ければ社内ナレッジ）に設計書ページを作るか、既存を本文ごと更新する。 */
 export async function upsertAppDesignDoc(content: string) {
-  const pages = await listNotionPages(APP_DESIGN_DOC_TITLE);
+  const databaseId = notionDesignDatabaseId() || notionDatabaseId();
+  const pages = await listNotionPages(APP_DESIGN_DOC_TITLE, databaseId);
   const existing = pages.find((page) => page.title === APP_DESIGN_DOC_TITLE);
   if (existing) {
     await replaceNotionPageBody(existing.id, content);
@@ -938,6 +940,7 @@ export async function upsertAppDesignDoc(content: string) {
     content,
     category: "開発",
     keywords: "設計,RAG,アーキテクチャ,MY HERO AGENT,ER,フロー",
+    databaseId,
   });
   return { ...created, updated: false as const, created: true as const };
 }

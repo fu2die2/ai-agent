@@ -27,6 +27,20 @@ export function notionDatabaseId() {
   return extractDatabaseId(raw) ?? raw.trim();
 }
 
+/** 設計書用データベース。RAG の2本目。 */
+export function notionDesignDatabaseId() {
+  const raw = envExactOrPrefixed("NOTION_DESIGN_DATABASE_ID");
+  return extractDatabaseId(raw) ?? raw.trim();
+}
+
+/** RAG 対象のデータベース ID（社内文書 + 設計書）。重複は除く。 */
+export function notionRagDatabaseIds() {
+  const ids = [notionDatabaseId(), notionDesignDatabaseId()]
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return [...new Set(ids)];
+}
+
 /** 書き込みに必要なトークンがあるか。 */
 export function hasNotionToken() {
   return Boolean(notionToken());
@@ -34,7 +48,7 @@ export function hasNotionToken() {
 
 /** 社内ナレッジ検索に必要なトークンと DB ID が揃っているか。 */
 export function hasNotionConfig() {
-  return Boolean(notionToken() && notionDatabaseId());
+  return Boolean(notionToken() && notionRagDatabaseIds().length > 0);
 }
 
 /**

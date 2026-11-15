@@ -9,7 +9,7 @@ alwaysApply: true
 
 1. `docs/design.md` の該当節（概要・フロー・ER・API・Tools）を実装に合わせて直す。日付を更新する。
 2. 新しい図が必要なら mermaid の flowchart / sequenceDiagram / erDiagram を足す。
-3. `npm run docs:sync` で社内ナレッジ Notion の「MY HERO AGENT 設計書」へ反映する。
-4. チャットで設計を聞かれたら `searchKnowledge` がこのページを拾える想定で書く。別 DB には置かない。
+3. `npm run docs:sync` で設計書 Notion DB の「MY HERO AGENT 設計書」へ反映する。
+4. チャットで設計を聞かれたら `searchKnowledge` が設計書 DB も拾う。社内文書 DB には設計を置かない。
 
 コードだけ変えて設計書を放置しない。

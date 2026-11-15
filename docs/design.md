@@ -1,8 +1,8 @@
 # MY HERO AGENT 設計書
 
-最終更新: 2026-11-15
+最終更新: 2026-11-15（設計書DB追加）
 
-このページはアプリの設計正本です。実装を変えたら `docs/design.md` を直し、`npm run docs:sync` で社内ナレッジ Notion へ反映します。次回の `searchKnowledge` で再インデックスされます。
+このページはアプリの設計正本です。実装を変えたら `docs/design.md` を直し、`npm run docs:sync` で設計書 Notion DB へ反映します。次回の `searchKnowledge` で再インデックスされます。
 
 ## 1. 機能概要
 
@@ -11,7 +11,7 @@ MY HERO AGENT は、チャットから社内 Notion を検索・作成し、計�
 - チャット UI（履歴・Execution Trace・データログ）
 - Gemini の function calling で Tool を選択・実行
 - Verifier が最終回答を点検
-- RAG: 社内ナレッジ Notion DB だけをチャンクして PostgreSQL に埋め込み
+- RAG: 社内文書 DB と設計書 DB をチャンクして PostgreSQL に埋め込み
 - Notion へのページ作成・追記・DB プロパティ追加/削除
 - 会話セッションとメモは PostgreSQL
 
@@ -132,7 +132,7 @@ erDiagram
 
 | 名前 | 役割 |
 | --- | --- |
-| searchKnowledge | 社内ナレッジ RAG（読み取り） |
+| searchKnowledge | 社内文書 + 設計書 RAG（読み取り） |
 | answerQuestion | 一般事実。Gemini 検索 |
 | calculate | 四則演算 |
 | saveMemo | アプリ内メモ |
@@ -140,7 +140,7 @@ erDiagram
 | createNotionPage / appendNotionPage | ページ作成・追記。Markdown（太字・コードブロック等） |
 | addNotionDatabaseProperty / removeNotionDatabaseProperty | DB 列の追加・削除 |
 
-RAG 対象は環境変数 `NOTION_DATABASE_ID` のデータベースのみ。新規に作った別 DB は、明示しない限り検索対象にしない。
+RAG 対象は `NOTION_DATABASE_ID`（社内文書）と `NOTION_DESIGN_DATABASE_ID`（設計書）。学習 DB などそれ以外は検索しない。
 
 ## 8. RAG 詳細
 
@@ -154,7 +154,7 @@ RAG 対象は環境変数 `NOTION_DATABASE_ID` のデータベースのみ。新
 ## 9. 環境
 
 - `GEMINI_API_KEY` / `GEMINI_MODEL`
-- `NOTION_TOKEN` / `NOTION_DATABASE_ID`
+- `NOTION_TOKEN` / `NOTION_DATABASE_ID` / `NOTION_DESIGN_DATABASE_ID`
 - `DATABASE_URL`（本番は Prisma Postgres。接頭辞 `AI_AGENT_*` も可）
 
 ## 10. 詳細設計の置き場

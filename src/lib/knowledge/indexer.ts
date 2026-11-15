@@ -32,7 +32,7 @@ async function indexNow() {
       return { indexed: false, count, model: existing?.model ?? "cached" };
     }
     throw new Error(
-      "NOTION_TOKEN と NOTION_DATABASE_ID がありません。ローカルは .env.local、本番は Vercel の Environment Variables に入れて再デプロイしてください",
+      "NOTION_TOKEN と NOTION_DATABASE_ID（任意で NOTION_DESIGN_DATABASE_ID）がありません。ローカルは .env.local、本番は Vercel の Environment Variables に入れて再デプロイしてください",
     );
   }
 

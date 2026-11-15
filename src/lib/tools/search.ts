@@ -1,7 +1,7 @@
 /**
  * searchKnowledge Tool。
  *
- * 社内ナレッジ専用。流れは:
+ * 社内文書 + 設計書。流れは:
  * 1. Notion から文書を取得してチャンク（未インデックスならここで実施）
  * 2. 質問を埋め込んで近いチャンクを返す
  * 3. エージェントはその抜粋だけを根拠に答える
@@ -9,7 +9,7 @@
 import { retrieveKnowledge } from "@/lib/knowledge/retrieve";
 import type { JsonValue } from "@/types/tool";
 
-/** 社内ナレッジを検索し、上位チャンクを results に入れて返す。 */
+/** 社内文書と設計書を検索し、上位チャンクを results に入れて返す。 */
 export async function searchKnowledge(
   args: Record<string, JsonValue>,
 ): Promise<JsonValue> {
@@ -25,7 +25,7 @@ export async function searchKnowledge(
         results: [],
         mode,
         message:
-          "Notionの社内ナレッジに一致する文書はありませんでした。一般質問なら answerQuestion を使ってください。",
+          "Notionの社内文書・設計書に一致する文書はありませんでした。一般質問なら answerQuestion を使ってください。",
       };
     }
 

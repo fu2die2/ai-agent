@@ -5,7 +5,8 @@
  * 行の一覧は databases.query ではなく dataSources.query。
  * 本文はページ ID に対する blocks.children（入れ子ブロックは再帰）。
  *
- * 必要な環境変数: NOTION_TOKEN, NOTION_DATABASE_ID
+ * 必要な環境変数: NOTION_TOKEN, NOTION_DATABASE_ID（社内文書）
+ * 任意: NOTION_DESIGN_DATABASE_ID（設計書。指定すると RAG に含める）
  * トークンを入れたあとは開発サーバーの再起動が必要。
  */
 import {
@@ -17,7 +18,14 @@ import {
   type PageObjectResponse,
   type RichTextItemResponse,
 } from "@notionhq/client";
-import { getNotionClient, notionPageUrl, resolveDataSourceId } from "./notion-client";
+import {
+  getNotionClient,
+  notionDatabaseId,
+  notionDesignDatabaseId,
+  notionPageUrl,
+  notionRagDatabaseIds,
+  resolveDataSourceId,
+} from "./notion-client";
 import type { KnowledgeDoc } from "./types";
 
 /** rich_text 配列をプレーン文字列に連結する。 */
@@ -163,10 +171,12 @@ async function blocksToText(client: Client, parentId: string): Promise<string> {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** 対象 DB の全ページを KnowledgeDoc にする。本文が空でもプロパティがあれば残す。 */
-export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
-  const client = getNotionClient();
-  const dataSourceId = await resolveDataSourceId(client);
+/** 1つの data source の全ページを KnowledgeDoc にする。 */
+async function fetchDocsFromDataSource(
+  client: Client,
+  dataSourceId: string,
+  corpusLabel: string,
+): Promise<KnowledgeDoc[]> {
   const docs: KnowledgeDoc[] = [];
   let cursor: string | undefined;
 
@@ -190,10 +200,13 @@ export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
         .join("\n");
       const content = [extras, body].filter(Boolean).join("\n\n");
       if (!content) continue;
+      const category =
+        propertyText(findProperty(item.properties, ["カテゴリ", "ジャンル", "category", "genre"])) ||
+        corpusLabel;
       docs.push({
         id: item.id,
         title: titleOf(item),
-        category: propertyText(findProperty(item.properties, ["カテゴリ", "category"])),
+        category,
         source: propertyText(findProperty(item.properties, ["出典", "source"])) || item.url,
         url: notionPageUrl(item.id, item.url),
         keywords: keywordsOf(propertyText(findProperty(item.properties, ["キーワード", "keywords", "tags"]))),
@@ -205,6 +218,29 @@ export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
     cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
   } while (cursor);
 
+  return docs;
+}
+
+/** RAG 対象 DB（社内文書 + 設計書）の全ページを KnowledgeDoc にする。 */
+export async function fetchNotionDocs(): Promise<KnowledgeDoc[]> {
+  const client = getNotionClient();
+  const databaseIds = notionRagDatabaseIds();
+  if (databaseIds.length === 0) {
+    throw new Error("RAG 対象の Notion データベース ID がありません");
+  }
+
+  const docs: KnowledgeDoc[] = [];
+  const designId = notionDesignDatabaseId();
+  for (const databaseId of databaseIds) {
+    const dataSourceId = await resolveDataSourceId(client, databaseId);
+    const corpusLabel =
+      designId && databaseId === designId
+        ? "設計書"
+        : databaseId === notionDatabaseId()
+          ? "社内文書"
+          : "ナレッジ";
+    docs.push(...(await fetchDocsFromDataSource(client, dataSourceId, corpusLabel)));
+  }
   return docs;
 }
 

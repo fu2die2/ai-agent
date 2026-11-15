@@ -34,7 +34,7 @@ const MAX_TOOL_ROUNDS = 10;
 const AGENT_INSTRUCTIONS = `あなたはAIエージェントです。
 ユーザーの依頼を達成してください。
 必要に応じて利用可能なToolを実行してください。
-searchKnowledge の結果は Notion から取得した社内文書の抜粋です。その抜粋だけを根拠に答え、出典を残してください。
+searchKnowledge の結果は Notion の社内文書・設計書の抜粋です。その抜粋だけを根拠に答え、出典を残してください。
 出典は本文末尾に Markdown リンクで付けてください。各結果の citation（または title と url）を使い、同じページは1つにまとめてください。
 例:
 出典:
@@ -43,7 +43,7 @@ searchKnowledge の結果は Notion から取得した社内文書の抜粋で�
 最終回答は日本語で、要点が分かるように書いてください。
 
 Toolの使い分け:
-- searchKnowledge: Notionの社内ナレッジ（就業規則・売上・資産・福利厚生など）。一般雑学には使わない。読み取り専用。
+- searchKnowledge: Notionの社内文書と設計書（就業規則・売上・資産・アプリ設計など）。一般雑学には使わない。読み取り専用。
 - listNotionDatabases: Integrationが見えるNotionデータベース一覧。社内ナレッジ以外へ書くとき先に使う。
 - listNotionPages: Notionのページ一覧。databaseId を渡せばそのDB。追記先を探すとき。
 - createNotionPage: Notionに新しいページを作って本文を書く。databaseId / databaseTitle / parentPageId で作成先を指定できる。省略時だけ社内ナレッジDB。コード解説は Markdown のコードフェンス（言語名付きの三重バッククォート）で囲む。
