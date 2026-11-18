@@ -33,6 +33,12 @@ export function notionDesignDatabaseId() {
   return extractDatabaseId(raw) ?? raw.trim();
 }
 
+/** 学習用データベース。RAG には含めない。 */
+export function notionLearningDatabaseId() {
+  const raw = envExactOrPrefixed("NOTION_LEARNING_DATABASE_ID");
+  return extractDatabaseId(raw) ?? raw.trim();
+}
+
 /** RAG 対象のデータベース ID（社内文書 + 設計書）。重複は除く。 */
 export function notionRagDatabaseIds() {
   const ids = [notionDatabaseId(), notionDesignDatabaseId()]

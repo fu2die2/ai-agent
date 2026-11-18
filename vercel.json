@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/learning-trend",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/learning-trend",
+      "schedule": "0 2 * * *"
+    }
+  ]
+}

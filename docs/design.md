@@ -1,6 +1,6 @@
 # MY HERO AGENT 設計書
 
-最終更新: 2026-11-17（学習DBの作成方針）
+最終更新: 2026-11-19（Notion見出し #### 対応）
 
 このページはアプリの設計正本です。実装を変えたら `docs/design.md` を直し、`npm run docs:sync` で設計書 Notion DB へ反映します。次回の `searchKnowledge` で再インデックスされます。
 
@@ -13,6 +13,7 @@ MY HERO AGENT は、チャットから社内 Notion を検索・作成し、計�
 - Verifier が最終回答を点検
 - RAG: 社内文書 DB と設計書 DB をチャンクして PostgreSQL に埋め込み
 - Notion へのページ作成・追記・DB プロパティ追加/削除
+- 毎日 02:00 と 11:00 JST に学習 DB へ技術トレンドを各1件作成し、LINE で通知
 - 会話セッションとメモは PostgreSQL
 
 ## 2. システム構成
@@ -127,6 +128,7 @@ erDiagram
 - `GET|POST /api/memos` / `DELETE /api/memos/:id`
 - `GET /api/inspect` データログ用スナップショット
 - `GET /api/tools` Tool 定義
+- `GET|POST /api/cron/learning-trend` 学習DB定時ジョブ。`Authorization: Bearer CRON_SECRET` 必須。`maxDuration` 120秒
 
 ## 7. Tools
 
@@ -137,10 +139,20 @@ erDiagram
 | calculate | 四則演算 |
 | saveMemo | アプリ内メモ |
 | listNotionPages / listNotionDatabases | 一覧 |
-| createNotionPage / appendNotionPage | ページ作成・追記。Markdown（太字・コードブロック等）。学習DBへの新規作成は詳しく・実務レベル・長文可・コード解説付きがデフォルト |
+| createNotionPage / appendNotionPage | ページ作成・追記。Markdown（太字・コードブロック・ATX見出し。番号付きの直後の箇条書きは入れ子。裸URLと `[text](url)` はリンク）。学習DBへの新規作成は詳しく・実務レベル・長文可・コード解説付きがデフォルト |
 | addNotionDatabaseProperty / removeNotionDatabaseProperty | DB 列の追加・削除 |
 
 RAG 対象は `NOTION_DATABASE_ID`（社内文書）と `NOTION_DESIGN_DATABASE_ID`（設計書）。学習 DB などそれ以外は検索しない。学習 DB へ `createNotionPage` するときは、ユーザー指定がなくても「詳しく」「実務レベルで」「長文でも可」「コード解説付き」で本文を書く。
+
+## 7.1 学習DB定時トレンド
+
+チャットの Orchestrator は使わない。`src/lib/jobs/learning-trend.ts` が Gemini Search でトピックを1件選び、長文を生成して学習 DB に作る。同一の JST 日付+時（例: `2026-11-19-02`）のプレフィックスがあるページがあれば skip。成功・失敗を LINE Messaging API の push で知らせる。
+
+起動経路:
+
+- Vercel Cron（`vercel.json`、毎日 UTC 17:00 と 02:00 = JST 2:00 と 11:00）
+- GitHub Actions（Hobby の 10 秒制限の保険。同じ時刻）
+- ローカル `npm run learning:trend`
 
 ## 8. RAG 詳細
 
@@ -154,7 +166,8 @@ RAG 対象は `NOTION_DATABASE_ID`（社内文書）と `NOTION_DESIGN_DATABASE_
 ## 9. 環境
 
 - `GEMINI_API_KEY` / `GEMINI_MODEL`
-- `NOTION_TOKEN` / `NOTION_DATABASE_ID` / `NOTION_DESIGN_DATABASE_ID`
+- `NOTION_TOKEN` / `NOTION_DATABASE_ID` / `NOTION_DESIGN_DATABASE_ID` / `NOTION_LEARNING_DATABASE_ID`
+- `CRON_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_TO`
 - `DATABASE_URL`（本番は Prisma Postgres。接頭辞 `AI_AGENT_*` も可）
 
 ## 10. 詳細設計の置き場

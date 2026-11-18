@@ -11,6 +11,7 @@ Next.js 16 で動く AI エージェントのポートフォリオ用 MVP です
 - Tool: `searchKnowledge`（社内文書DBと設計書DBをチャンクして検索） / `answerQuestion` / `calculate` / `saveMemo`
 - Verifier による回答検証
 - `GEMINI_API_KEY` がなくてもデモモードで Tool 実行を確認可能
+- 毎日 2:00 と 11:00 JST に学習 DB へ技術トレンドを作成し LINE 通知（`npm run learning:trend`）
 
 ## 起動
 

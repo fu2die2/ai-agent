@@ -18,6 +18,7 @@ import {
   getNotionClient,
   notionDatabaseId,
   notionDesignDatabaseId,
+  notionLearningDatabaseId,
   notionPageUrl,
   resolveDataSourceId,
 } from "./notion-client";
@@ -66,11 +67,26 @@ const PLAIN_MARKS: TextMarks = {
   code: false,
 };
 
-/** 次の Markdown 記号の位置。無ければ末尾。 */
+const BARE_URL_RE = /^https?:\/\/[^\s<>\]）)]+/;
+
+/** 末尾の句読点を除いた URL。 */
+function takeBareUrl(input: string) {
+  const match = input.match(BARE_URL_RE);
+  if (!match) return null;
+  const raw = match[0];
+  const url = raw.replace(/[.,;:、。]+$/, "");
+  return { raw, url };
+}
+
+/** 次の Markdown 記号または裸 URL の位置。無ければ末尾。 */
 function nextInlineMarker(input: string, from: number) {
   let min = input.length;
   for (const marker of ["*", "`", "~", "["]) {
     const at = input.indexOf(marker, from);
+    if (at >= 0 && at < min) min = at;
+  }
+  for (const needle of ["https://", "http://"]) {
+    const at = input.indexOf(needle, from);
     if (at >= 0 && at < min) min = at;
   }
   return min;
@@ -107,6 +123,15 @@ function parseInlineMarkdown(input: string, inherited: TextMarks = PLAIN_MARKS):
       }
       i += link[0].length;
       continue;
+    }
+
+    if (!inherited.code) {
+      const bare = takeBareUrl(input.slice(i));
+      if (bare) {
+        emit(bare.url, { href: bare.url });
+        i += bare.raw.length;
+        continue;
+      }
     }
 
     if (input[i] === "`") {
@@ -352,6 +377,23 @@ function notionCodeLanguage(raw: string) {
   return "plain text" as const;
 }
 
+/**
+ * ATX 見出し（#〜######）。
+ * スペース無し（##見出し）と閉じの ### も拾う。
+ * Notion は heading_1〜3 までなので 4 段目以降は heading_3。
+ */
+function parseAtxHeading(trimmed: string): BlockObjectRequest | null {
+  const match = trimmed.match(/^(#{1,6})(?:[ \t]+|(?=[^\s#]))(.+?)(?:[ \t]+#*)?$/);
+  if (!match) return null;
+  const level = Math.min(match[1].length, 3);
+  const text = match[2].trim();
+  if (!text) return null;
+  const rich_text = styledRichText(text);
+  if (level === 1) return { heading_1: { rich_text } };
+  if (level === 2) return { heading_2: { rich_text } };
+  return { heading_3: { rich_text } };
+}
+
 /** Markdown を Notion ブロック列にする。コードフェンスは code ブロックにする。 */
 export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
@@ -401,16 +443,9 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
       push({ divider: {} });
       continue;
     }
-    if (trimmed.startsWith("### ")) {
-      push({ heading_3: { rich_text: styledRichText(trimmed.slice(4)) } });
-      continue;
-    }
-    if (trimmed.startsWith("## ")) {
-      push({ heading_2: { rich_text: styledRichText(trimmed.slice(3)) } });
-      continue;
-    }
-    if (trimmed.startsWith("# ")) {
-      push({ heading_1: { rich_text: styledRichText(trimmed.slice(2)) } });
+    const heading = parseAtxHeading(trimmed);
+    if (heading) {
+      push(heading);
       continue;
     }
     const todo = trimmed.match(/^[-*] \[([ xX])\]\s+(.*)$/);
@@ -424,7 +459,11 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
       continue;
     }
     if (/^[-*] /.test(trimmed)) {
-      push({ bulleted_list_item: { rich_text: styledRichText(trimmed.slice(2)) } });
+      push({
+        bulleted_list_item: {
+          rich_text: styledRichText(trimmed.replace(/^[-*]\s+/, "").trim()),
+        },
+      });
       continue;
     }
     const numbered = trimmed.match(/^\d+\.\s+(.*)$/);
@@ -444,7 +483,82 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
   if (blocks.length === 0) {
     push({ paragraph: { rich_text: styledRichText(markdown.trim() || " ") } });
   }
-  return blocks;
+  return nestBulletsUnderNumberedItems(mergeLinkedReferenceBullets(blocks));
+}
+
+function richTextPlain(items: NotionText[] | undefined) {
+  return (items ?? []).map((item) => item.text.content).join("").trim();
+}
+
+function isUrlOnly(text: string) {
+  return /^https?:\/\/\S+$/i.test(text.trim());
+}
+
+/**
+ * Gemini が「説明の箇条書き」の次行に URL だけ置くパターンを
+ * 1つのリンク付き箇条書きにまとめる。
+ */
+function mergeLinkedReferenceBullets(blocks: BlockObjectRequest[]) {
+  const merged: BlockObjectRequest[] = [];
+  for (let i = 0; i < blocks.length; i += 1) {
+    const current = blocks[i];
+    const next = blocks[i + 1];
+    if (current && next && "bulleted_list_item" in current && "bulleted_list_item" in next) {
+      const title = richTextPlain(
+        current.bulleted_list_item.rich_text as NotionText[] | undefined,
+      );
+      const url = richTextPlain(next.bulleted_list_item.rich_text as NotionText[] | undefined);
+      if (title && isUrlOnly(url) && !isUrlOnly(title)) {
+        merged.push({
+          bulleted_list_item: {
+            rich_text: [
+              {
+                type: "text",
+                text: { content: title.slice(0, MAX_RICH_TEXT), link: { url } },
+              },
+            ],
+          },
+        });
+        i += 1;
+        continue;
+      }
+    }
+    merged.push(current);
+  }
+  return merged;
+}
+
+/**
+ * 番号付き項目の直後の箇条書きを子にする。
+ * 途中で箇条書きが入ると Notion の番号が毎回 1 に戻るのを防ぐ。
+ */
+function nestBulletsUnderNumberedItems(blocks: BlockObjectRequest[]) {
+  const nested: BlockObjectRequest[] = [];
+  for (let i = 0; i < blocks.length; i += 1) {
+    const current = blocks[i];
+    if (!("numbered_list_item" in current)) {
+      nested.push(current);
+      continue;
+    }
+    const children: BlockObjectRequest[] = [];
+    let j = i + 1;
+    while (j < blocks.length && "bulleted_list_item" in blocks[j]) {
+      children.push(blocks[j]);
+      j += 1;
+    }
+    if (children.length > 0) {
+      nested.push({
+        numbered_list_item: {
+          rich_text: current.numbered_list_item.rich_text,
+          children: children as never,
+        },
+      });
+      i = j - 1;
+      continue;
+    }
+    nested.push(current);
+  }
+  return nested;
 }
 
 /** Notion は1回 100 ブロックまでなので分割して append する。 */
@@ -522,10 +636,25 @@ export async function listNotionDatabases(query?: string): Promise<NotionDatabas
 }
 
 /** 名前の完全一致を優先し、無ければ部分一致の先頭。 */
-async function findDatabaseByTitle(title: string) {
+export async function findDatabaseByTitle(title: string) {
   const databases = await listNotionDatabases(title);
   const exact = databases.find((item) => item.title === title);
   return exact ?? databases[0] ?? null;
+}
+
+export const LEARNING_DATABASE_TITLE = "学習";
+
+/** 学習 DB の ID。環境変数を優先し、無ければタイトル「学習」で探す。 */
+export async function resolveLearningDatabaseId() {
+  const fromEnv = notionLearningDatabaseId().trim();
+  if (fromEnv) return fromEnv;
+  const found = await findDatabaseByTitle(LEARNING_DATABASE_TITLE);
+  if (!found) {
+    throw new Error(
+      "学習データベースが見つかりません。NOTION_LEARNING_DATABASE_ID を設定するか、Integration に「学習」DB を共有してください",
+    );
+  }
+  return found.id;
 }
 
 /** title 型のプロパティ名。無いデータベースは作れない。 */
