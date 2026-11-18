@@ -104,12 +104,12 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "createNotionPage",
     description:
-      "Notionに新しいページを作り本文を書く。databaseId / databaseTitle で任意のDB、parentPageId で任意の親ページの子として作れる。どちらも無いときは社内ナレッジ DB。",
+      "Notionに新しいページを作り本文を書く。databaseId / databaseTitle で任意のDB、parentPageId で任意の親ページの子として作れる。どちらも無いときは社内ナレッジ DB。学習DB（名前が「学習」）へ書くときは、詳しく・実務レベル・長文可・コード解説付きをデフォルトで満たす。コードは言語名付きフェンスで囲む。",
     parameters: {
       type: "object",
       properties: {
         title: { type: "string", description: "ページタイトル" },
-        content: { type: "string", description: "本文。Markdown可。コードは言語名付きのフェンス（三重バッククォート）で囲むと Notion のコードブロックになる" },
+        content: { type: "string", description: "本文。Markdown可。コードは言語名付きのフェンス（三重バッククォート）で囲むと Notion のコードブロックになる。学習DB向けは詳しく実務レベルで長文・コード解説付きにする" },
         category: { type: "string", description: "カテゴリ列があれば設定。例: 総務" },
         keywords: { type: "string", description: "キーワード。カンマ区切り" },
         databaseId: { type: "string", description: "作成先データベースの ID または URL" },

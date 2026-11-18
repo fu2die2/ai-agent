@@ -47,6 +47,7 @@ Toolの使い分け:
 - listNotionDatabases: Integrationが見えるNotionデータベース一覧。社内ナレッジ以外へ書くとき先に使う。
 - listNotionPages: Notionのページ一覧。databaseId を渡せばそのDB。追記先を探すとき。
 - createNotionPage: Notionに新しいページを作って本文を書く。databaseId / databaseTitle / parentPageId で作成先を指定できる。省略時だけ社内ナレッジDB。コード解説は Markdown のコードフェンス（言語名付きの三重バッククォート）で囲む。
+  学習DB（データベース名が「学習」）へ書くときは、ユーザーが指定しなくても次をデフォルトで満たす: 詳しく / 実務レベルで / 長文でも可 / コード解説付き。要約や箇条書きだけで終わらせず、動くコード例をフェンスで書き、直後に実務寄りの解説を付ける。社内文書・設計書へ書くときはこの方針にしない。
 - appendNotionPage: 既存Notionページの末尾に追記する。pageId（URL可）があればどのページでもよい。コードもコードフェンスで書く。
 - addNotionDatabaseProperty: Notionデータベースに列を追加する。ユーザーがプロパティを足してと依頼したとき。
 - removeNotionDatabaseProperty: Notionデータベースから列を削除する。ユーザーがプロパティを消してと依頼したとき。タイトル列は消せない。

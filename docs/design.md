@@ -1,6 +1,6 @@
 # MY HERO AGENT 設計書
 
-最終更新: 2026-11-15（設計書DB追加）
+最終更新: 2026-11-17（学習DBの作成方針）
 
 このページはアプリの設計正本です。実装を変えたら `docs/design.md` を直し、`npm run docs:sync` で設計書 Notion DB へ反映します。次回の `searchKnowledge` で再インデックスされます。
 
@@ -137,10 +137,10 @@ erDiagram
 | calculate | 四則演算 |
 | saveMemo | アプリ内メモ |
 | listNotionPages / listNotionDatabases | 一覧 |
-| createNotionPage / appendNotionPage | ページ作成・追記。Markdown（太字・コードブロック等） |
+| createNotionPage / appendNotionPage | ページ作成・追記。Markdown（太字・コードブロック等）。学習DBへの新規作成は詳しく・実務レベル・長文可・コード解説付きがデフォルト |
 | addNotionDatabaseProperty / removeNotionDatabaseProperty | DB 列の追加・削除 |
 
-RAG 対象は `NOTION_DATABASE_ID`（社内文書）と `NOTION_DESIGN_DATABASE_ID`（設計書）。学習 DB などそれ以外は検索しない。
+RAG 対象は `NOTION_DATABASE_ID`（社内文書）と `NOTION_DESIGN_DATABASE_ID`（設計書）。学習 DB などそれ以外は検索しない。学習 DB へ `createNotionPage` するときは、ユーザー指定がなくても「詳しく」「実務レベルで」「長文でも可」「コード解説付き」で本文を書く。
 
 ## 8. RAG 詳細
 

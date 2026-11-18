@@ -649,7 +649,7 @@ export async function findNotionPageByTitle(title: string, databaseId?: string) 
   return exact ?? pages[0] ?? null;
 }
 
-/** 親ページの下、または指定 DB（省略時は社内ナレッジ）にページを1件作る。 */
+/** 親ページの下、または指定 DB（省略時は社内ナレッジ）にページを1件作る。学習 DB 向けの詳しさは Orchestrator が本文に入れる。 */
 export async function createNotionPage(input: {
   title: string;
   content: string;
