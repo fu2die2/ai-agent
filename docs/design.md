@@ -1,6 +1,6 @@
 # MY HERO AGENT 設計書
 
-最終更新: 2026-11-19（Notion見出し #### 対応）
+最終更新: 2026-11-20（本番タイムアウト対策）
 
 このページはアプリの設計正本です。実装を変えたら `docs/design.md` を直し、`npm run docs:sync` で設計書 Notion DB へ反映します。次回の `searchKnowledge` で再インデックスされます。
 
@@ -121,8 +121,8 @@ erDiagram
 
 ## 6. API
 
-- `POST /api/agent/stream` SSE でエージェント実行
-- `POST /api/agent/run` 同期実行
+- `POST /api/agent/stream` SSE でエージェント実行（`maxDuration` 120秒。Postgres は serverless 向けに `connection_limit=1`）
+- `POST /api/agent/run` 同期実行（同じく 120秒）
 - `GET /api/sessions` 会話一覧
 - `GET /api/sessions/:id` 会話全文
 - `GET|POST /api/memos` / `DELETE /api/memos/:id`

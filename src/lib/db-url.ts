@@ -30,14 +30,30 @@ function firstPostgresUrl(names: string[]) {
   return "";
 }
 
+/**
+ * Vercel の各インスタンスが接続を抱えすぎないようにする。
+ * 制限を超えると findMany が Timed out fetching a new connection になる。
+ */
+function withServerlessPool(url: string) {
+  if (!url || /localhost|127\.0\.0\.1/i.test(url)) return url;
+  const extras: string[] = [];
+  if (!/[?&]connection_limit=/.test(url)) extras.push("connection_limit=1");
+  if (!/[?&]pool_timeout=/.test(url)) extras.push("pool_timeout=10");
+  if (!/[?&]connect_timeout=/.test(url)) extras.push("connect_timeout=10");
+  if (extras.length === 0) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}${extras.join("&")}`;
+}
+
 /** アプリ用。プール接続を優先する。 */
 export function resolveDatabaseUrl() {
-  return firstPostgresUrl([
-    "DATABASE_URL_POOLED",
-    "DATABASE_URL",
-    "POSTGRES_URL",
-    "PRISMA_DATABASE_URL",
-  ]);
+  return withServerlessPool(
+    firstPostgresUrl([
+      "DATABASE_URL_POOLED",
+      "DATABASE_URL",
+      "POSTGRES_URL",
+      "PRISMA_DATABASE_URL",
+    ]),
+  );
 }
 
 /** migrate 用。直結を優先する。 */

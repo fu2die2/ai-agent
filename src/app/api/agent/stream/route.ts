@@ -9,7 +9,7 @@ import { runAgent } from "@/lib/agent/orchestrator";
 import type { AgentEvent } from "@/types/agent";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /** message を受け取り、実行中イベントを SSE で流す。 */
 export async function POST(request: Request) {
